@@ -3,35 +3,45 @@ use WikiMaxx\View;
 /** @var string $csrf */
 /** @var string $base */
 /** @var list<array{id:int,username:string,email:string,roles:list<string>}> $users */
-/** @var list<string> $allRoles */
+/** @var list<array{id:string,label:string,builtin:bool,capability:?string}> $allRoles */
 $prefix = ($base === '' || $base === '/') ? '' : $base;
 ?>
 <h1>Utilizatori WikiMaxx</h1>
-<p><a href="<?= View::e($prefix) ?>/admin">← Admin conținut</a></p>
+<p><a href="<?= View::e($prefix) ?>/admin">← Admin conținut</a> · <a href="<?= View::e($prefix) ?>/admin/roles">Roluri</a></p>
 
 <table class="users">
   <thead>
-    <tr><th>User</th><th>Email</th><th>Roluri</th><th></th></tr>
+    <tr><th>User</th><th>Email</th><th>Roluri</th><th>Parolă</th><th></th></tr>
   </thead>
   <tbody>
-  <?php foreach ($users as $u): ?>
+  <?php foreach ($users as $u):
+    $fid = 'user-' . (int) $u['id'];
+  ?>
     <tr>
-      <td colspan="4">
-        <form method="post" action="<?= View::e($prefix) ?>/admin/users" class="form row-form">
+      <td>
+        <form id="<?= View::e($fid) ?>" method="post" action="<?= View::e($prefix) ?>/admin/users">
           <input type="hidden" name="_csrf" value="<?= View::e($csrf) ?>">
           <input type="hidden" name="action" value="update">
           <input type="hidden" name="id" value="<?= (int) $u['id'] ?>">
-          <strong><?= View::e($u['username']) ?></strong>
-          <input type="email" name="email" value="<?= View::e($u['email']) ?>" placeholder="email">
-          <span class="roles">
-            <?php foreach ($allRoles as $r): ?>
-              <label><input type="checkbox" name="roles[]" value="<?= View::e($r) ?>"
-                <?= in_array($r, $u['roles'], true) ? 'checked' : '' ?>> <?= View::e($r) ?></label>
-            <?php endforeach; ?>
-          </span>
-          <input type="password" name="password" placeholder="parolă nouă (opțional)" autocomplete="new-password">
-          <button type="submit">Salvează</button>
         </form>
+        <strong><?= View::e($u['username']) ?></strong>
+      </td>
+      <td>
+        <input form="<?= View::e($fid) ?>" type="email" name="email" value="<?= View::e($u['email']) ?>" placeholder="email">
+      </td>
+      <td>
+        <span class="roles">
+          <?php foreach ($allRoles as $r): ?>
+            <label><input form="<?= View::e($fid) ?>" type="checkbox" name="roles[]" value="<?= View::e($r['id']) ?>"
+              <?= in_array($r['id'], $u['roles'], true) ? 'checked' : '' ?>> <?= View::e($r['label']) ?></label>
+          <?php endforeach; ?>
+        </span>
+      </td>
+      <td>
+        <input form="<?= View::e($fid) ?>" type="password" name="password" placeholder="parolă nouă (opțional)" autocomplete="new-password">
+      </td>
+      <td>
+        <button form="<?= View::e($fid) ?>" type="submit">Salvează</button>
         <form method="post" action="<?= View::e($prefix) ?>/admin/users" class="inline" onsubmit="return confirm('Ștergi userul?');">
           <input type="hidden" name="_csrf" value="<?= View::e($csrf) ?>">
           <input type="hidden" name="action" value="delete">
@@ -53,7 +63,7 @@ $prefix = ($base === '' || $base === '/') ? '' : $base;
   <label>Parolă <input type="password" name="password" required autocomplete="new-password"></label>
   <div class="roles">
     <?php foreach ($allRoles as $r): ?>
-      <label><input type="checkbox" name="roles[]" value="<?= View::e($r) ?>" <?= $r === 'colaborator' ? 'checked' : '' ?>> <?= View::e($r) ?></label>
+      <label><input type="checkbox" name="roles[]" value="<?= View::e($r['id']) ?>" <?= $r['id'] === 'colaborator' ? 'checked' : '' ?>> <?= View::e($r['label']) ?></label>
     <?php endforeach; ?>
   </div>
   <button type="submit">Creează</button>

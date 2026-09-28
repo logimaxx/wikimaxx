@@ -26,6 +26,7 @@ final class AdminService
         if (!mkdir($abs, 0755, true) && !is_dir($abs)) {
             throw new \RuntimeException('Could not create folder');
         }
+        $this->appendToOrder(trim($relParent, '/'), $name);
         return $rel;
     }
 
@@ -49,7 +50,96 @@ final class AdminService
         if (file_put_contents($abs, $body) === false) {
             throw new \RuntimeException('Could not write page');
         }
+        $this->appendToOrder(trim($relParent, '/'), $slug);
         return $rel;
+    }
+
+    /**
+     * Persist manual nav order for one folder. Names are folder names or page slugs.
+     *
+     * @param list<string> $names
+     */
+    public function saveOrder(string $relDir, array $names): void
+    {
+        $rel = trim(str_replace('\\', '/', $relDir), '/');
+        $candidate = $rel === '' ? $this->tree->root() : $this->tree->root() . '/' . $rel;
+        $absDir = realpath($candidate);
+        if ($absDir === false || !is_dir($absDir) || !str_starts_with($absDir, $this->tree->root())) {
+            throw new \InvalidArgumentException('Invalid folder');
+        }
+
+        $acl = Acl::resolve($this->tree->root(), $absDir);
+        if (!Acl::canWrite($this->auth->roles(), $acl) && !$this->auth->isAdmin()) {
+            throw new \RuntimeException('Forbidden');
+        }
+
+        $known = [];
+        foreach ($this->tree->orderableChildren($rel) as $item) {
+            $known[$item['name']] = true;
+        }
+        $ordered = [];
+        foreach ($names as $name) {
+            if (!is_string($name) || $name === '' || !isset($known[$name])) {
+                continue;
+            }
+            if (!in_array($name, $ordered, true)) {
+                $ordered[] = $name;
+            }
+        }
+        foreach (array_keys($known) as $name) {
+            if (!in_array($name, $ordered, true)) {
+                $ordered[] = $name;
+            }
+        }
+
+        $file = $absDir . '/_order.json';
+        $pretty = json_encode($ordered, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($pretty === false || file_put_contents($file, $pretty . "\n") === false) {
+            throw new \RuntimeException('Could not save order');
+        }
+    }
+
+    public function clearOrder(string $relDir): void
+    {
+        $rel = trim(str_replace('\\', '/', $relDir), '/');
+        $candidate = $rel === '' ? $this->tree->root() : $this->tree->root() . '/' . $rel;
+        $absDir = realpath($candidate);
+        if ($absDir === false || !is_dir($absDir) || !str_starts_with($absDir, $this->tree->root())) {
+            throw new \InvalidArgumentException('Invalid folder');
+        }
+        $acl = Acl::resolve($this->tree->root(), $absDir);
+        if (!Acl::canWrite($this->auth->roles(), $acl) && !$this->auth->isAdmin()) {
+            throw new \RuntimeException('Forbidden');
+        }
+        $file = $absDir . '/_order.json';
+        if (is_file($file) && !unlink($file)) {
+            throw new \RuntimeException('Could not clear order');
+        }
+    }
+
+    /** Append a new child to existing `_order.json` (no-op if file absent). */
+    private function appendToOrder(string $relParent, string $name): void
+    {
+        $relParent = trim(str_replace('\\', '/', $relParent), '/');
+        $absDir = $relParent === ''
+            ? $this->tree->root()
+            : realpath($this->tree->root() . '/' . $relParent);
+        if ($absDir === false || !is_dir($absDir)) {
+            return;
+        }
+        $current = ContentTree::loadOrder($absDir);
+        if ($current === null) {
+            return;
+        }
+        if (in_array($name, $current, true)) {
+            return;
+        }
+        $current[] = $name;
+        $file = $absDir . '/_order.json';
+        $pretty = json_encode($current, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($pretty !== false) {
+            file_put_contents($file, $pretty . "\n");
+        }
     }
 
     public function savePage(string $rel, string $raw): void
@@ -86,6 +176,16 @@ final class AdminService
         if (!is_array($decoded)) {
             throw new \InvalidArgumentException('Invalid JSON');
         }
+        $aclRoles = [];
+        if (isset($decoded['roles']) && is_array($decoded['roles'])) {
+            foreach ($decoded['roles'] as $r) {
+                if (is_string($r) && $r !== '') {
+                    $aclRoles[] = $r;
+                }
+            }
+        }
+        Roles::assertKnown($aclRoles);
+        $decoded['roles'] = Roles::normalize($aclRoles);
         $pretty = json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         if ($pretty === false || file_put_contents($abs, $pretty . "\n") === false) {
             throw new \RuntimeException('Could not save ACL');
@@ -142,7 +242,7 @@ final class AdminService
         $name = trim($name);
         $name = preg_replace('/[^a-zA-Z0-9._-]+/', '-', $name) ?? '';
         $name = trim($name, '-.');
-        if ($name === '' || $name === '_access.json' || str_contains($name, '..')) {
+        if ($name === '' || $name === '_access.json' || $name === '_order.json' || str_contains($name, '..')) {
             throw new \InvalidArgumentException('Invalid name');
         }
         return $name;

@@ -21,16 +21,18 @@ mkdir -p "${RUNTIME}/data" "${RUNTIME}/content"
 RUNTIME_ENV="${RUNTIME}/dotenv"
 CONTENT_ROOT="${CONTENT_ROOT:-${RUNTIME}/content}"
 USERS_PATH="${USERS_PATH:-${RUNTIME}/data/users.json}"
+ROLES_PATH="${ROLES_PATH:-${RUNTIME}/data/roles.json}"
 
 if [[ ! -f "${RUNTIME_ENV}" || "${FORCE_ENV_REFRESH:-}" == "1" ]]; then
 	if [[ -z "${SESSION_SECRET:-}" || "${SESSION_SECRET}" == "change-me"* ]]; then
-		echo "ERROR: set SESSION_SECRET in git-deploy secrets.env before first deploy" >&2
-		exit 1
+		SESSION_SECRET="$(openssl rand -hex 32)"
+		echo "Generated SESSION_SECRET (stored in ${RUNTIME_ENV})"
 	fi
 	umask 077
 	cat >"${RUNTIME_ENV}" <<EOF
 CONTENT_ROOT=${CONTENT_ROOT}
 USERS_PATH=${USERS_PATH}
+ROLES_PATH=${ROLES_PATH:-${RUNTIME}/data/roles.json}
 SESSION_SECRET=${SESSION_SECRET}
 ADMIN_USER=${ADMIN_USER:-admin}
 ADMIN_PASSWORD=${ADMIN_PASSWORD:-}

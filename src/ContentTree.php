@@ -110,7 +110,8 @@ final class ContentTree
         $files = [];
 
         foreach ($entries as $name) {
-            if ($name === '.' || $name === '..' || str_starts_with($name, '.') || $name === '_access.json') {
+            if ($name === '.' || $name === '..' || str_starts_with($name, '.')
+                || $name === '_access.json' || $name === '_order.json') {
                 continue;
             }
             $abs = $absDir . '/' . $name;
@@ -126,7 +127,7 @@ final class ContentTree
                     'type' => 'dir',
                     'name' => $name,
                     'title' => self::dirTitle($abs, $name),
-                    'href' => '/' . $childRel,
+                    'href' => '/' . $childRel . '/',
                     'children' => $children,
                 ];
                 continue;
@@ -153,10 +154,167 @@ final class ContentTree
             ];
         }
 
-        usort($dirs, static fn ($a, $b) => strcasecmp($a['title'], $b['title']));
-        usort($files, static fn ($a, $b) => strcasecmp($a['title'], $b['title']));
+        return self::applyOrder(array_merge($dirs, $files), self::loadOrder($absDir));
+    }
 
-        return array_merge($dirs, $files);
+    /**
+     * One-level children for directory index pages (ACL-filtered, same order as nav).
+     *
+     * @param list<string>|null $userRoles
+     * @return list<array{title: string, href: string}>
+     */
+    public function listChildren(string $absDir, string $relDir, ?array $userRoles): array
+    {
+        $acl = Acl::resolve($this->root(), $absDir);
+        if (!Acl::canRead($acl, $userRoles)) {
+            return [];
+        }
+
+        $dirs = [];
+        $files = [];
+        foreach (scandir($absDir) ?: [] as $name) {
+            if ($name === '.' || $name === '..' || str_starts_with($name, '.')
+                || $name === '_access.json' || $name === '_order.json') {
+                continue;
+            }
+            $childAbs = $absDir . '/' . $name;
+            $childRel = $relDir === '' ? $name : $relDir . '/' . $name;
+            if (is_dir($childAbs)) {
+                $childAcl = Acl::resolve($this->root(), $childAbs);
+                if (!Acl::canRead($childAcl, $userRoles)) {
+                    continue;
+                }
+                $dirs[] = [
+                    'type' => 'dir',
+                    'name' => $name,
+                    'title' => self::dirTitle($childAbs, $name),
+                    'href' => '/' . $childRel . '/',
+                ];
+            } elseif (str_ends_with($name, '.md') && $name !== 'index.md') {
+                $meta = Markdown::parseFile($childAbs);
+                $slug = substr($name, 0, -3);
+                $files[] = [
+                    'type' => 'file',
+                    'name' => $slug,
+                    'title' => $meta['title'] ?? self::humanize($slug),
+                    'href' => '/' . ($relDir === '' ? $slug : $relDir . '/' . $slug),
+                ];
+            }
+        }
+
+        $out = [];
+        foreach (self::applyOrder(array_merge($dirs, $files), self::loadOrder($absDir)) as $item) {
+            $out[] = ['title' => $item['title'], 'href' => $item['href']];
+        }
+        return $out;
+    }
+
+    /**
+     * Orderable children for admin (ignores ACL filter — editors already have write).
+     *
+     * @return list<array{type: string, name: string, title: string}>
+     */
+    public function orderableChildren(string $relDir): array
+    {
+        $relDir = trim(str_replace('\\', '/', $relDir), '/');
+        $absDir = $relDir === '' ? $this->root() : ($this->root() . '/' . $relDir);
+        $real = realpath($absDir);
+        if ($real === false || !is_dir($real) || !str_starts_with($real, $this->root())) {
+            throw new \InvalidArgumentException('Invalid folder');
+        }
+
+        $dirs = [];
+        $files = [];
+        foreach (scandir($real) ?: [] as $name) {
+            if ($name === '.' || $name === '..' || str_starts_with($name, '.')
+                || $name === '_access.json' || $name === '_order.json') {
+                continue;
+            }
+            $abs = $real . '/' . $name;
+            if (is_dir($abs)) {
+                $dirs[] = [
+                    'type' => 'dir',
+                    'name' => $name,
+                    'title' => self::dirTitle($abs, $name),
+                ];
+            } elseif (str_ends_with($name, '.md') && $name !== 'index.md') {
+                $slug = substr($name, 0, -3);
+                $meta = Markdown::parseFile($abs);
+                $files[] = [
+                    'type' => 'file',
+                    'name' => $slug,
+                    'title' => $meta['title'] ?? self::humanize($slug),
+                ];
+            }
+        }
+
+        return self::applyOrder(array_merge($dirs, $files), self::loadOrder($real));
+    }
+
+    /** @return list<string>|null */
+    public static function loadOrder(string $absDir): ?array
+    {
+        $file = rtrim($absDir, '/') . '/_order.json';
+        if (!is_file($file)) {
+            return null;
+        }
+        $raw = json_decode((string) file_get_contents($file), true);
+        if (!is_array($raw)) {
+            return null;
+        }
+        $out = [];
+        foreach ($raw as $item) {
+            if (is_string($item) && $item !== '') {
+                $out[] = $item;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Apply manual order when present; otherwise dirs A–Z then files A–Z (by title).
+     *
+     * @param list<array{type: string, name: string, title: string, ...}> $items
+     * @param list<string>|null $order
+     * @return list<array{type: string, name: string, title: string, ...}>
+     */
+    public static function applyOrder(array $items, ?array $order): array
+    {
+        if ($order === null) {
+            $dirs = [];
+            $files = [];
+            foreach ($items as $item) {
+                if (($item['type'] ?? '') === 'dir') {
+                    $dirs[] = $item;
+                } else {
+                    $files[] = $item;
+                }
+            }
+            usort($dirs, static fn ($a, $b) => strcasecmp($a['title'], $b['title']));
+            usort($files, static fn ($a, $b) => strcasecmp($a['title'], $b['title']));
+            return array_values(array_merge($dirs, $files));
+        }
+
+        $rank = [];
+        foreach ($order as $i => $name) {
+            if (!array_key_exists($name, $rank)) {
+                $rank[$name] = $i;
+            }
+        }
+        usort($items, static function ($a, $b) use ($rank) {
+            $ra = $rank[$a['name']] ?? PHP_INT_MAX;
+            $rb = $rank[$b['name']] ?? PHP_INT_MAX;
+            if ($ra !== $rb) {
+                return $ra <=> $rb;
+            }
+            $ta = ($a['type'] ?? '') === 'dir' ? 0 : 1;
+            $tb = ($b['type'] ?? '') === 'dir' ? 0 : 1;
+            if ($ta !== $tb) {
+                return $ta <=> $tb;
+            }
+            return strcasecmp($a['title'], $b['title']);
+        });
+        return array_values($items);
     }
 
     public static function humanize(string $slug): string
@@ -210,36 +368,97 @@ final class ContentTree
     }
 
     /**
-     * Flat list of all writable paths for admin tree.
+     * One-level listing for the admin folder browser.
      *
-     * @return list<array{rel: string, type: string}>
+     * @return list<array{type: 'dir'|'md'|'asset', name: string, title: string, rel: string}>
      */
-    public function flatList(): array
+    public function browseLevel(string $relDir): array
     {
-        $out = [];
-        $this->walkFlat($this->root(), '', $out);
-        return $out;
-    }
+        $relDir = trim(str_replace('\\', '/', $relDir), '/');
+        $absDir = $relDir === '' ? $this->root() : ($this->root() . '/' . $relDir);
+        $real = realpath($absDir);
+        if ($real === false || !is_dir($real) || !str_starts_with($real, $this->root())) {
+            throw new \InvalidArgumentException('Invalid folder');
+        }
 
-    /** @param list<array{rel: string, type: string}> $out */
-    private function walkFlat(string $absDir, string $relDir, array &$out): void
-    {
-        $entries = scandir($absDir) ?: [];
-        foreach ($entries as $name) {
-            if ($name === '.' || $name === '..' || str_starts_with($name, '.')) {
+        $dirs = [];
+        $mds = [];
+        $assets = [];
+        foreach (scandir($real) ?: [] as $name) {
+            if ($name === '.' || $name === '..' || str_starts_with($name, '.')
+                || $name === '_access.json' || $name === '_order.json') {
                 continue;
             }
-            $abs = $absDir . '/' . $name;
+            $abs = $real . '/' . $name;
             $childRel = $relDir === '' ? $name : $relDir . '/' . $name;
             if (is_dir($abs)) {
-                $out[] = ['rel' => $childRel, 'type' => 'dir'];
-                $this->walkFlat($abs, $childRel, $out);
-            } elseif (str_ends_with($name, '.md') || $name === '_access.json') {
-                $out[] = ['rel' => $childRel, 'type' => 'file'];
+                $dirs[] = [
+                    'type' => 'dir',
+                    'name' => $name,
+                    'title' => self::dirTitle($abs, $name),
+                    'rel' => $childRel,
+                ];
+            } elseif (str_ends_with($name, '.md')) {
+                $meta = Markdown::parseFile($abs);
+                $mds[] = [
+                    'type' => 'md',
+                    'name' => $name,
+                    'title' => $meta['title'] ?? self::humanize(substr($name, 0, -3)),
+                    'rel' => $childRel,
+                ];
             } elseif (preg_match('/\.(png|jpe?g|gif|webp|svg)$/i', $name)) {
-                $out[] = ['rel' => $childRel, 'type' => 'asset'];
+                $assets[] = [
+                    'type' => 'asset',
+                    'name' => $name,
+                    'title' => $name,
+                    'rel' => $childRel,
+                ];
             }
         }
+
+        $orderedCore = [];
+        foreach ($dirs as $item) {
+            $orderedCore[] = [
+                'type' => 'dir',
+                'name' => $item['name'],
+                'title' => $item['title'],
+                '_item' => $item,
+            ];
+        }
+        foreach ($mds as $item) {
+            $orderedCore[] = [
+                'type' => 'file',
+                'name' => substr($item['name'], 0, -3),
+                'title' => $item['title'],
+                '_item' => $item,
+            ];
+        }
+        $sorted = [];
+        foreach (self::applyOrder($orderedCore, self::loadOrder($real)) as $row) {
+            $sorted[] = $row['_item'];
+        }
+        usort($assets, static fn ($a, $b) => strcasecmp($a['name'], $b['name']));
+        return array_values(array_merge($sorted, $assets));
+    }
+
+    /**
+     * Breadcrumb segments for admin browse path (root first).
+     *
+     * @return list<array{rel: string, title: string}>
+     */
+    public function browseCrumbs(string $relDir): array
+    {
+        $relDir = trim(str_replace('\\', '/', $relDir), '/');
+        $crumbs = [['rel' => '', 'title' => 'Rădăcină']];
+        if ($relDir === '') {
+            return $crumbs;
+        }
+        $acc = '';
+        foreach (explode('/', $relDir) as $part) {
+            $acc = $acc === '' ? $part : $acc . '/' . $part;
+            $crumbs[] = ['rel' => $acc, 'title' => $this->titleForRel($acc)];
+        }
+        return $crumbs;
     }
 
     public function absoluteFromRel(string $rel): ?string

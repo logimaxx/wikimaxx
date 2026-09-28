@@ -105,7 +105,7 @@ final class Acl
         if (in_array(Roles::ADMIN, $userRoles, true)) {
             return true;
         }
-        if (!in_array(Roles::EDITOR, $userRoles, true)) {
+        if (!Roles::hasWriteCapability($userRoles)) {
             return false;
         }
         return self::canRead($acl, $userRoles);

@@ -40,8 +40,15 @@ templates/
 seed/             # minimal demo content (git)
 content/          # default local CONTENT_ROOT (gitignored) if you migrate seed here
 data/users.json   # accounts (gitignored)
+data/roles.json   # role catalog (gitignored; seeded on first boot)
 bin/              # migrate-content.php, seed-admin.php
 ```
+
+### Roles (`roles.json`)
+
+Catalog of access levels + optional write capability. Default builtins: `admin`, `colaborator`, `partener`, `editor` (`capability: write`). Manage in `/admin/roles`.
+
+`users.json` and `_access.json` store role **ids** only — no FK; admin write-paths reject unknown ids, and delete is blocked while a role is still used.
 
 ### ACL (`_access.json`)
 
@@ -55,11 +62,24 @@ bin/              # migrate-content.php, seed-admin.php
 
 Applies to the folder and descendants until another `_access.json`. No file on the path → public.
 
-**Roles:** `admin` (everything + users + ACL), `colaborator`, `partener`, plus write capability `editor`. Customize roles in `src/Roles.php` as needed.
+Folder URLs canonicalize with a trailing slash (`/guide/` → so relative Markdown links resolve). Dir entries in nav use the same form.
 
+**Special ids:** `admin` (bypass + users/roles/ACL admin); any role with `capability: write` (default `editor`) may edit content on zones it can read.
+
+### Nav order (`_order.json`)
+
+Per-folder list of child folder names and page slugs (no `.md`):
+
+```json
+["getting-started", "internal", "faq"]
+```
+
+Missing file → folders A–Z, then pages A–Z (by title). Entries not listed appear after the ordered ones.
+
+In the UI (write role): link **Ordonează** on a page, or Admin → **ordine** on a folder / „Ordine rădăcină”. Drag rows, then save.
 ### Admin
 
-After login with `admin` / `editor`: `/admin` — folders, Markdown pages, image upload. Only `admin`: edit `_access.json` and `/admin/users`.
+After login with write capability: `/admin` — browse folders level-by-level, Markdown edit, image upload, per-level nav order. Only `admin`: `_access.json`, `/admin/users`, `/admin/roles`.
 
 ## Deploy
 
@@ -81,14 +101,14 @@ Panel / `config.conf`:
 | `OUTPUT_DIR` | `.` |
 | `EXCLUDE` | `.git,.env,.env.*,node_modules,tests,.github` |
 
-`secrets.env` (first deploy at least):
+`secrets.env` (optional but useful):
 
 ```bash
-SESSION_SECRET=<long-random>
 ADMIN_USER=admin
 ADMIN_PASSWORD=<initial>
 ADMIN_EMAIL=you@example.com
-# optional:
+# optional — auto-generated on first deploy if omitted:
+# SESSION_SECRET=<long-random>
 # CONTENT_ROOT=/absolute/path/to/wiki
 # SEED_CONTENT=yes
 ```

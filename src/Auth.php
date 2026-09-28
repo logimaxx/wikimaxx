@@ -133,6 +133,7 @@ final class Auth
         if ($username === '' || $password === '') {
             throw new \InvalidArgumentException('Username and password required');
         }
+        Roles::assertKnown($roles);
         $store = $this->readStore();
         foreach ($store['users'] as $row) {
             if (($row['username'] ?? '') === $username) {
@@ -158,6 +159,7 @@ final class Auth
      */
     public function updateUser(int $id, string $email, array $roles, ?string $newPassword = null): void
     {
+        Roles::assertKnown($roles);
         $store = $this->readStore();
         $found = false;
         foreach ($store['users'] as &$row) {
@@ -194,6 +196,28 @@ final class Auth
         return count($this->readStore()['users']);
     }
 
+    /**
+     * Role ids currently assigned to any user (raw, before normalize drop).
+     *
+     * @return list<string>
+     */
+    public function usedRoleIds(): array
+    {
+        $found = [];
+        foreach ($this->readStore()['users'] as $row) {
+            $roles = $row['roles'] ?? [];
+            if (!is_array($roles)) {
+                continue;
+            }
+            foreach ($roles as $r) {
+                if (is_string($r) && $r !== '') {
+                    $found[$r] = true;
+                }
+            }
+        }
+        return array_keys($found);
+    }
+
     public function findIdByUsername(string $username): ?int
     {
         foreach ($this->readStore()['users'] as $row) {
@@ -219,9 +243,7 @@ final class Auth
     public function canEditContent(): bool
     {
         $roles = $this->roles();
-        return $roles !== null && (
-            in_array(Roles::ADMIN, $roles, true) || in_array(Roles::EDITOR, $roles, true)
-        );
+        return $roles !== null && Roles::hasWriteCapability($roles);
     }
 
     /** @param array $row */

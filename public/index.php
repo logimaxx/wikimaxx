@@ -29,6 +29,7 @@ if ($base !== '' && $base !== '/' && str_starts_with($uri, $base)) {
 }
 
 $path = trim($uri, '/');
+$uriHadTrailingSlash = str_ends_with($uri, '/') && $uri !== '/';
 $flash = $_SESSION['_flash'] ?? null;
 unset($_SESSION['_flash']);
 
@@ -96,6 +97,16 @@ if (str_starts_with($path, 'admin')) {
         exit;
     }
 
+    if ($adminPath === 'roles' || str_starts_with($adminPath, 'roles/')) {
+        if (!$auth->isAdmin()) {
+            http_response_code(403);
+            echo 'Forbidden';
+            exit;
+        }
+        handleRoles($method, $auth, $config, $view, $user, $tree, $roles, $flash, $csrf, $base, $flashSet, $redirect);
+        exit;
+    }
+
     if ($method === 'POST') {
         if (!Csrf::validate($config, $_POST['_csrf'] ?? null)) {
             $flashSet('error', 'Sesiune invalidă.');
@@ -112,6 +123,11 @@ if (str_starts_with($path, 'admin')) {
                 ),
                 'save_page' => $admin->savePage((string) ($_POST['rel'] ?? ''), (string) ($_POST['body'] ?? '')),
                 'save_access' => $admin->saveAccess((string) ($_POST['rel'] ?? ''), (string) ($_POST['json'] ?? '')),
+                'save_order' => $admin->saveOrder(
+                    (string) ($_POST['rel'] ?? ''),
+                    array_values(array_filter((array) ($_POST['names'] ?? []), 'is_string'))
+                ),
+                'clear_order' => $admin->clearOrder((string) ($_POST['rel'] ?? '')),
                 'delete' => $admin->deletePath((string) ($_POST['rel'] ?? '')),
                 'upload' => $admin->uploadImage((string) ($_POST['parent'] ?? ''), $_FILES['file'] ?? []),
                 default => throw new RuntimeException('Unknown action'),
@@ -128,9 +144,55 @@ if (str_starts_with($path, 'admin')) {
     }
 
     $editRel = (string) ($_GET['edit'] ?? '');
-    $editAccess = (string) ($_GET['access'] ?? '');
+    $showAccess = array_key_exists('access', $_GET);
+    $showOrder = array_key_exists('order', $_GET);
     $editContent = null;
     $accessContent = null;
+    $orderContent = null;
+
+    $browseRel = array_key_exists('path', $_GET)
+        ? trim(str_replace('\\', '/', (string) $_GET['path']), '/')
+        : null;
+
+    // Legacy / shortcut: ?order=folder or ?access=folder without path=
+    if ($browseRel === null && $showOrder) {
+        $ov = trim(str_replace('\\', '/', (string) $_GET['order']), '/');
+        if ($ov !== '' && $ov !== '1') {
+            $browseRel = $ov;
+        }
+    }
+    if ($browseRel === null && $showAccess) {
+        $av = trim(str_replace('\\', '/', (string) $_GET['access']), '/');
+        if ($av !== '' && $av !== '1') {
+            $browseRel = $av;
+        }
+    }
+    if ($browseRel === null && $editRel !== '') {
+        $parent = dirname(str_replace('\\', '/', $editRel));
+        $browseRel = ($parent === '.' || $parent === '/') ? '' : $parent;
+    }
+    if ($browseRel === null) {
+        $browseRel = '';
+    }
+
+    $browseItems = [];
+    $browseCrumbs = [['rel' => '', 'title' => 'Rădăcină']];
+    try {
+        $browseItems = $tree->browseLevel($browseRel);
+        $browseCrumbs = $tree->browseCrumbs($browseRel);
+    } catch (Throwable $e) {
+        $browseRel = '';
+        $browseItems = $tree->browseLevel('');
+        $browseCrumbs = $tree->browseCrumbs('');
+        $flash = ['type' => 'error', 'message' => $e->getMessage()];
+    }
+
+    $adminPathQ = static function (string $path, array $extra = []) : string {
+        $q = array_merge(['path' => $path], $extra);
+        // keep empty path in query for stable redirects
+        return '/admin?' . http_build_query($q);
+    };
+
     if ($editRel !== '') {
         try {
             $editContent = ['rel' => $editRel, 'body' => $admin->readFile($editRel)];
@@ -138,18 +200,32 @@ if (str_starts_with($path, 'admin')) {
             $flash = ['type' => 'error', 'message' => $e->getMessage()];
         }
     }
-    if ($editAccess !== '' && $auth->isAdmin()) {
-        $accessRel = trim($editAccess, '/') === ''
-            ? '_access.json'
-            : trim($editAccess, '/') . '/_access.json';
-        $abs = $tree->root() . '/' . $accessRel;
+    if ($showAccess && $auth->isAdmin()) {
+        $accessRel = $browseRel;
+        $accessFile = $accessRel === '' ? '_access.json' : $accessRel . '/_access.json';
+        $abs = $tree->root() . '/' . $accessFile;
         $accessContent = [
-            'rel' => trim($editAccess, '/'),
+            'rel' => $accessRel,
             'json' => is_file($abs)
                 ? (string) file_get_contents($abs)
                 : "{\n  \"title\": \"\",\n  \"public\": false,\n  \"roles\": [\"colaborator\", \"admin\"]\n}\n",
         ];
     }
+    if ($showOrder) {
+        try {
+            $orderContent = [
+                'rel' => $browseRel,
+                'items' => $tree->orderableChildren($browseRel),
+                'manual' => ContentTree::loadOrder(
+                    $browseRel === '' ? $tree->root() : $tree->root() . '/' . $browseRel
+                ) !== null,
+            ];
+        } catch (Throwable $e) {
+            $flash = ['type' => 'error', 'message' => $e->getMessage()];
+        }
+    }
+
+    $browseParent = $browseRel === '' ? null : (dirname($browseRel) === '.' ? '' : dirname($browseRel));
 
     $view->render('admin', [
         'title' => 'Admin conținut',
@@ -158,9 +234,14 @@ if (str_starts_with($path, 'admin')) {
         'flash' => $flash,
         'csrf' => $csrf,
         'base' => $base,
-        'flat' => $tree->flatList(),
+        'browseRel' => $browseRel,
+        'browseParent' => $browseParent,
+        'browseItems' => $browseItems,
+        'browseCrumbs' => $browseCrumbs,
+        'adminPathQ' => $adminPathQ,
         'editContent' => $editContent,
         'accessContent' => $accessContent,
+        'orderContent' => $orderContent,
         'isAdmin' => $auth->isAdmin(),
     ]);
     exit;
@@ -182,8 +263,19 @@ if ($resolved === null) {
         'breadcrumb' => [],
         'canEdit' => false,
         'editRel' => null,
+        'orderRel' => null,
     ]);
     exit;
+}
+
+// Canonical trailing slash on folder URLs so relative Markdown links resolve correctly.
+if ($method === 'GET' && $path !== '' && !$uriHadTrailingSlash) {
+    $isFolderUrl = $resolved['type'] === 'dir'
+        || ($resolved['type'] === 'file' && str_ends_with($resolved['rel'], '/index.md')
+            && $path === str_replace('\\', '/', dirname($resolved['rel'])));
+    if ($isFolderUrl) {
+        $redirect('/' . $path . '/');
+    }
 }
 
 if ($resolved['type'] === 'asset') {
@@ -220,6 +312,7 @@ if (!Acl::canRead($acl, $roles)) {
         'breadcrumb' => [],
         'canEdit' => false,
         'editRel' => null,
+        'orderRel' => null,
     ]);
     exit;
 }
@@ -228,7 +321,7 @@ $nav = $tree->nav($roles);
 $breadcrumb = breadcrumbFromPath($tree, $path);
 
 if ($resolved['type'] === 'dir') {
-    $listing = listReadableChildren($tree, $resolved['path'], $resolved['rel'], $roles);
+    $listing = $tree->listChildren($resolved['path'], $resolved['rel'], $roles);
     $folderName = basename($resolved['path']) ?: 'WikiMaxx';
     $title = ContentTree::dirTitle($resolved['path'], $folderName);
     $html = '<h1>' . View::e($title) . '</h1><ul class="dir-list">';
@@ -237,6 +330,7 @@ if ($resolved['type'] === 'dir') {
             . View::e($item['title']) . '</a></li>';
     }
     $html .= '</ul>';
+    $canEditHere = $auth->canEditContent() && Acl::canWrite($roles, $acl);
     $view->render('doc', [
         'title' => $title,
         'user' => $user,
@@ -247,8 +341,9 @@ if ($resolved['type'] === 'dir') {
         'html' => $html,
         'pageTitle' => $title,
         'breadcrumb' => $breadcrumb,
-        'canEdit' => $auth->canEditContent() && Acl::canWrite($roles, $acl),
+        'canEdit' => $canEditHere,
         'editRel' => null,
+        'orderRel' => $canEditHere ? $resolved['rel'] : null,
     ]);
     exit;
 }
@@ -257,6 +352,11 @@ $parsed = Markdown::parseFile($resolved['path']);
 $pageTitle = $parsed['title'] ?? ContentTree::humanize(basename($resolved['path'], '.md'));
 $html = Markdown::toHtml($parsed['body']);
 $editRel = $resolved['rel'];
+$canEditHere = $auth->canEditContent() && Acl::canWrite($roles, $acl);
+$parentRel = dirname(str_replace('\\', '/', $editRel));
+if ($parentRel === '.' || $parentRel === '/') {
+    $parentRel = '';
+}
 
 $view->render('doc', [
     'title' => $pageTitle,
@@ -268,46 +368,14 @@ $view->render('doc', [
     'html' => $html,
     'pageTitle' => $pageTitle,
     'breadcrumb' => $breadcrumb,
-    'canEdit' => $auth->canEditContent() && Acl::canWrite($roles, $acl),
+    'canEdit' => $canEditHere,
     'editRel' => $editRel,
+    'orderRel' => $canEditHere ? $parentRel : null,
 ]);
-
+exit;
 /**
- * @param list<string>|null $roles
  * @return list<array{title: string, href: string}>
  */
-function listReadableChildren(ContentTree $tree, string $abs, string $rel, ?array $roles): array
-{
-    $items = [];
-    foreach (scandir($abs) ?: [] as $name) {
-        if ($name === '.' || $name === '..' || str_starts_with($name, '.') || $name === '_access.json') {
-            continue;
-        }
-        $childAbs = $abs . '/' . $name;
-        $childRel = $rel === '' ? $name : $rel . '/' . $name;
-        if (is_dir($childAbs)) {
-            $childAcl = Acl::resolve($tree->root(), $childAbs);
-            if (!Acl::canRead($childAcl, $roles)) {
-                continue;
-            }
-            $items[] = [
-                'title' => ContentTree::dirTitle($childAbs, $name),
-                'href' => '/' . $childRel,
-            ];
-        } elseif (str_ends_with($name, '.md') && $name !== 'index.md') {
-            $meta = Markdown::parseFile($childAbs);
-            $slug = substr($name, 0, -3);
-            $items[] = [
-                'title' => $meta['title'] ?? ContentTree::humanize($slug),
-                'href' => '/' . ($rel === '' ? $slug : $rel . '/' . $slug),
-            ];
-        }
-    }
-    usort($items, static fn ($a, $b) => strcasecmp($a['title'], $b['title']));
-    return $items;
-}
-
-/** @return list<array{title: string, href: string}> */
 function breadcrumbFromPath(ContentTree $tree, string $path): array
 {
     $parts = array_values(array_filter(explode('/', trim($path, '/'))));
@@ -387,6 +455,75 @@ function handleUsers(
         'csrf' => $csrf,
         'base' => $base,
         'users' => $auth->allUsers(),
-        'allRoles' => \WikiMaxx\Roles::all(),
+        'allRoles' => \WikiMaxx\Roles::catalog(),
+    ]);
+}
+
+/**
+ * @param callable(string): never $redirect
+ * @param callable(string, string): void $flashSet
+ * @param array{type: string, message: string}|null $flash
+ * @param array{id: int, username: string, email: string, roles: list<string>}|null $user
+ * @param list<string>|null $roles
+ */
+function handleRoles(
+    string $method,
+    Auth $auth,
+    mixed $config,
+    View $view,
+    ?array $user,
+    ContentTree $tree,
+    ?array $roles,
+    ?array $flash,
+    string $csrf,
+    string $base,
+    callable $flashSet,
+    callable $redirect,
+): void {
+    if ($method === 'POST') {
+        if (!Csrf::validate($config, $_POST['_csrf'] ?? null)) {
+            $flashSet('error', 'Sesiune invalidă.');
+            $redirect('/admin/roles');
+        }
+        $action = (string) ($_POST['action'] ?? '');
+        try {
+            if ($action === 'create') {
+                $cap = trim((string) ($_POST['capability'] ?? ''));
+                \WikiMaxx\Roles::create(
+                    (string) ($_POST['id'] ?? ''),
+                    (string) ($_POST['label'] ?? ''),
+                    $cap === 'write' ? 'write' : null
+                );
+            } elseif ($action === 'update') {
+                $cap = trim((string) ($_POST['capability'] ?? ''));
+                \WikiMaxx\Roles::update(
+                    (string) ($_POST['id'] ?? ''),
+                    (string) ($_POST['label'] ?? ''),
+                    $cap === 'write' ? 'write' : null
+                );
+            } elseif ($action === 'delete') {
+                \WikiMaxx\Roles::delete(
+                    (string) ($_POST['id'] ?? ''),
+                    $auth->usedRoleIds(),
+                    \WikiMaxx\Roles::scanAccessRoles($tree->root())
+                );
+            }
+            $flashSet('ok', 'Salvat.');
+        } catch (Throwable $e) {
+            $flashSet('error', $e->getMessage());
+        }
+        $redirect('/admin/roles');
+    }
+
+    $view->render('roles', [
+        'title' => 'Roluri',
+        'user' => $user,
+        'nav' => $tree->nav($roles),
+        'flash' => $flash,
+        'csrf' => $csrf,
+        'base' => $base,
+        'catalog' => \WikiMaxx\Roles::catalog(),
+        'usedUsers' => $auth->usedRoleIds(),
+        'usedAcl' => \WikiMaxx\Roles::scanAccessRoles($tree->root()),
     ]);
 }
