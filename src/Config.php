@@ -1,0 +1,55 @@
+<?php
+
+declare(strict_types=1);
+
+namespace WikiMaxx;
+
+final class Config
+{
+    public function __construct(
+        public readonly string $root,
+        public readonly string $contentRoot,
+        public readonly string $sqlitePath,
+        public readonly string $sessionSecret,
+        public readonly string $adminUser,
+        public readonly string $adminPassword,
+        public readonly string $adminEmail,
+    ) {
+    }
+
+    public static function load(string $root): self
+    {
+        $envFile = $root . '/.env';
+        $vars = [];
+        if (is_file($envFile)) {
+            foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+                $line = trim($line);
+                if ($line === '' || str_starts_with($line, '#') || !str_contains($line, '=')) {
+                    continue;
+                }
+                [$k, $v] = explode('=', $line, 2);
+                $vars[trim($k)] = trim($v, " \t\"'");
+            }
+        }
+
+        $resolve = static function (string $path) use ($root): string {
+            if ($path === '') {
+                return $root;
+            }
+            if ($path[0] === '/' || (strlen($path) > 1 && $path[1] === ':')) {
+                return $path;
+            }
+            return $root . '/' . $path;
+        };
+
+        return new self(
+            root: $root,
+            contentRoot: $resolve($vars['CONTENT_ROOT'] ?? 'content'),
+            sqlitePath: $resolve($vars['USERS_PATH'] ?? $vars['SQLITE_PATH'] ?? 'data/users.json'),
+            sessionSecret: $vars['SESSION_SECRET'] ?? 'dev-insecure-secret',
+            adminUser: $vars['ADMIN_USER'] ?? 'admin',
+            adminPassword: $vars['ADMIN_PASSWORD'] ?? '',
+            adminEmail: $vars['ADMIN_EMAIL'] ?? 'admin@example.com',
+        );
+    }
+}

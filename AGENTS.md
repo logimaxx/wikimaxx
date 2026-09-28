@@ -1,22 +1,21 @@
 ## Development
 
+```bash
+composer install
+cp .env.example .env   # SESSION_SECRET; CONTENT_ROOT → your Markdown tree
+php bin/migrate-content.php   # optional demo from seed/
+php bin/seed-admin.php
+php -S 127.0.0.1:8080 -t public public/router.php
 ```
-npm run dev
-```
 
-Prefer Node.js ≥ 22 (`nvm use 22`).
+PHP ≥ 8.2. Runtime content: `CONTENT_ROOT` (often a separate docs repo). Demo seed in git: `seed/`.
 
-## Content rules (MaxxOps Academy)
+## What this app is
 
-Two audiences in one site:
+WikiMaxx is a **generic** flat-file wiki engine (Markdown + folder ACL + admin). Product-specific help (e.g. MaxxOps) belongs in a content repository, not here.
 
-1. **Pentru utilizatori** (`pornire/`, `pe-rol/`, `fluxuri/`, `integrari/`, `video/`) — help for client staff; safe to leave public.
-2. **Echipă** (`echipa/`) — onboarding, sales pitch, strategies, collaborators. Always set `robots: noindex` in frontmatter. Do not put secrets (passwords, API keys). Remind deployers to protect `/echipa/` with Basic Auth on the host.
+Namespace: `WikiMaxx\`.
 
-- User docs: no PHP paths / schema / cron internals.
-- Sales docs: honest limits; align with maxxops.ro messaging.
-- Do not reintroduce full client overview into `maxxops_latest/documentation/maxxops-perspectiva-client.md`.
+## ACL
 
-## Documentation
-
-Starlight: https://starlight.astro.build/
+Nearest `_access.json` walking up to content root wins. Missing ACL → public. Nav hides what the current user cannot read.

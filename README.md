@@ -1,67 +1,72 @@
-# MaxxOps Academy
+# WikiMaxx
 
-Documentație MaxxOps pe **două zone**:
+Flat-file **wiki / documentation engine**: scans a Markdown tree, builds navigation, renders pages, optional ACL by role, in-browser admin edit.
 
-| Zonă | Public | Conținut |
-|------|--------|----------|
-| **Pentru utilizatori** | Da (help clienți) | Pornire, pe rol, fluxuri, integrări, video |
-| **Echipă (intern)** | Nu ideal — protejează pe host | Onboarding, sales, strategii, colaboratori |
+Content lives outside the app (or in a separate docs repo). Set `CONTENT_ROOT` in `.env`.
 
-Site static: [Astro Starlight](https://starlight.astro.build/).  
-URL: **https://academy.maxxops.ro**
+## Requirements
 
-Conținutul se scrie **doar intern** (acest repo). Fără editare publică tip wiki.
+- PHP ≥ 8.2
+- Composer
+- Extensions: `json`, `session`, `mbstring` (users stored as JSON — no SQLite required)
 
-## Comenzi
-
-Necesită **Node.js ≥ 22**.
+## Setup
 
 ```bash
-npm install
-npm run dev      # http://localhost:4321
-npm run build    # output în dist/
-npm run preview
+composer install
+cp .env.example .env
+# set SESSION_SECRET; set CONTENT_ROOT to your site (or keep demo path)
+
+php bin/migrate-content.php   # optional: copy seed/ → CONTENT_ROOT + demo ACL
+php bin/seed-admin.php
+
+php -S 127.0.0.1:8080 -t public public/router.php
 ```
 
-## Structură
+Open http://127.0.0.1:8080 — admin from `.env`.
 
-```
-src/content/docs/
-  pornire/ pe-rol/ fluxuri/ integrari/ video/   # utilizatori
-  echipa/
-    onboarding/   # bun venit, prima săptămână, colaboratori
-    sales/        # produs, ICP, obiecții, strategii
+### Example: MaxxOps docs (sibling checkout)
+
+```env
+CONTENT_ROOT=../maxxops_documentation/wiki
 ```
 
-## Securitate — zona Echipă
+## Layout
 
-Build-ul static pune **tot** în `dist/`. `noindex` pe paginile `/echipa/` nu egalează autentificare.
-
-Pe webhost, configurează **HTTP Basic Auth** (sau echivalent) pe calea `/echipa/` (și ideal pe search index dacă e nevoie). Nu pune în git parole, prețuri sensibile fără această protecție.
-
-Exemplu Apache (ilustrativ):
-
-```apache
-<Location /echipa>
-  AuthType Basic
-  AuthName "MaxxOps Echipa"
-  AuthUserFile /path/to/.htpasswd
-  Require valid-user
-</Location>
+```
+public/           # docroot
+src/              # WikiMaxx\ (Auth, Acl, ContentTree, …)
+templates/
+seed/             # minimal demo content (git)
+content/          # default local CONTENT_ROOT (gitignored) if you migrate seed here
+data/users.json   # accounts (gitignored)
+bin/              # migrate-content.php, seed-admin.php
 ```
 
-## Ce nu e aici
+### ACL (`_access.json`)
 
-Arhitectură EN, reference schema, ops, roadmap → repo MaxxOps `documentation/`.
+```json
+{
+  "title": "Internal",
+  "public": false,
+  "roles": ["colaborator", "admin"]
+}
+```
+
+Applies to the folder and descendants until another `_access.json`. No file on the path → public.
+
+**Roles:** `admin` (everything + users + ACL), `colaborator`, `partener`, plus write capability `editor`. Customize roles in `src/Roles.php` as needed.
+
+### Admin
+
+After login with `admin` / `editor`: `/admin` — folders, Markdown pages, image upload. Only `admin`: edit `_access.json` and `/admin/users`.
 
 ## Deploy
 
-1. `npm run build`
-2. Rsync/FTP `dist/` pe docroot `academy.maxxops.ro`
-3. DNS + HTTPS
-4. Basic Auth pe `/echipa/`
+1. Clone + `composer install --no-dev`
+2. Docroot → `public/`
+3. Volume for `CONTENT_ROOT` and `data/` **outside** `public/`
+4. `.env` on the host
+5. Optionally seed admin once; content comes from your docs repo / volume
 
-```bash
-npm run build
-rsync -avz --delete dist/ user@host:/var/www/academy.maxxops.ro/
-```
+Example nginx: [deploy/nginx.example.conf](deploy/nginx.example.conf)

@@ -1,0 +1,15 @@
+{
+  "name": "wikimaxx/wikimaxx",
+  "description": "WikiMaxx — flat-file wiki / documentation engine (Markdown + ACL)",
+  "type": "project",
+  "license": "MIT",
+  "require": {
+    "php": ">=8.2",
+    "erusev/parsedown": "^1.7"
+  },
+  "autoload": {
+    "psr-4": {
+      "WikiMaxx\\": "src/"
+    }
+  }
+}
