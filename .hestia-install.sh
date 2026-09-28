@@ -12,9 +12,10 @@ set -euo pipefail
 
 composer install --no-dev --optimize-autoloader
 
-# git-src → /home/<user>/web/<domain>/git-src ; runtime lives beside public_html
+# git-src → /home/<user>/web/<domain>/git-src
+# Runtime under Hestia private/ (site user can write there; domain root often cannot)
 SITE_ROOT="$(cd .. && pwd)"
-RUNTIME="${WIKIMAXX_RUNTIME:-${SITE_ROOT}/wikimaxx-runtime}"
+RUNTIME="${WIKIMAXX_RUNTIME:-${SITE_ROOT}/private/wikimaxx-runtime}"
 mkdir -p "${RUNTIME}/data" "${RUNTIME}/content"
 
 RUNTIME_ENV="${RUNTIME}/dotenv"

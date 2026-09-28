@@ -95,4 +95,4 @@ ADMIN_EMAIL=you@example.com
 
 After the first successful deploy, set the domain **Custom document root → Directory** to `public` (Hestia UI or `v-change-web-domain-docroot USER DOMAIN DOMAIN public`).
 
-Runtime state lives in `../wikimaxx-runtime/` next to `public_html` (dotenv, `data/`, default `content/`) and is reused on later deploys.
+Runtime state lives in `private/wikimaxx-runtime/` under the domain (dotenv, `data/`, default `content/`) and is reused on later deploys.
