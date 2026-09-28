@@ -19,7 +19,11 @@ final class Config
 
     public static function load(string $root): self
     {
+        // Prefer .env; fall back to dotenv (Hestia git-deploy never ships .env* into releases)
         $envFile = $root . '/.env';
+        if (!is_file($envFile) && is_file($root . '/dotenv')) {
+            $envFile = $root . '/dotenv';
+        }
         $vars = [];
         if (is_file($envFile)) {
             foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {

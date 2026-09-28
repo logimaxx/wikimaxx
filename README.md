@@ -66,7 +66,33 @@ After login with `admin` / `editor`: `/admin` — folders, Markdown pages, image
 1. Clone + `composer install --no-dev`
 2. Docroot → `public/`
 3. Volume for `CONTENT_ROOT` and `data/` **outside** `public/`
-4. `.env` on the host
+4. `.env` on the host (or `dotenv` — used by Hestia installs; `.env` wins if both exist)
 5. Optionally seed admin once; content comes from your docs repo / volume
 
 Example nginx: [deploy/nginx.example.conf](deploy/nginx.example.conf)
+
+### Hestia git-deploy
+
+Panel / `config.conf`:
+
+| Key | Value |
+|---|---|
+| `INSTALL_CMD` | `bash .hestia-install.sh` |
+| `OUTPUT_DIR` | `.` |
+| `EXCLUDE` | `.git,.env,.env.*,node_modules,tests,.github` |
+
+`secrets.env` (first deploy at least):
+
+```bash
+SESSION_SECRET=<long-random>
+ADMIN_USER=admin
+ADMIN_PASSWORD=<initial>
+ADMIN_EMAIL=you@example.com
+# optional:
+# CONTENT_ROOT=/absolute/path/to/wiki
+# SEED_CONTENT=yes
+```
+
+After the first successful deploy, set the domain **Custom document root → Directory** to `public` (Hestia UI or `v-change-web-domain-docroot USER DOMAIN DOMAIN public`).
+
+Runtime state lives in `../wikimaxx-runtime/` next to `public_html` (dotenv, `data/`, default `content/`) and is reused on later deploys.
