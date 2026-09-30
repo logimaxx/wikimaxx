@@ -47,6 +47,7 @@ a:hover { color: var(--mark); }
   text-decoration: none;
   flex: 0 0 auto;
 }
+.brand span { color: var(--mark); }
 .brand:hover { color: var(--mark); text-decoration: none; }
 .top-search {
   flex: 1 1 auto;

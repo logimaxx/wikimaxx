@@ -8,13 +8,22 @@ use WikiMaxx\View;
 /** @var string $csrf */
 /** @var string $base */
 $prefix = ($base === '' || $base === '/') ? '' : $base;
+$brandName = $siteBrand ?? 'WikiMaxx';
+$brandLower = strtolower($brandName);
+$isMaxxOpsBrand = str_starts_with($brandLower, 'maxxops');
+if ($isMaxxOpsBrand) {
+    $suffix = trim((string) preg_replace('/^maxxops\s*/i', '', $brandName));
+    $brandHtml = 'Maxx<span>OPS</span>' . ($suffix !== '' ? ' ' . View::e($suffix) : '');
+} else {
+    $brandHtml = View::e($brandName);
+}
 ?>
 <!DOCTYPE html>
 <html lang="ro">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title><?= View::e($title) ?> · <?= View::e($siteBrand ?? 'WikiMaxx') ?></title>
+  <title><?= View::e($title) ?> · <?= View::e($brandName) ?></title>
   <link rel="stylesheet" href="<?= View::e($prefix) ?>/assets/style.css">
   <link rel="icon" href="<?= View::e($prefix) ?>/favicon.svg" type="image/svg+xml">
   <style>
@@ -27,6 +36,7 @@ $prefix = ($base === '' || $base === '/') ? '' : $base;
     }
     html.is-ready #page-loader { opacity: 0; visibility: hidden; pointer-events: none; }
     #page-loader .loader-brand { font-weight: 700; font-size: 1.15rem; letter-spacing: -.03em; }
+    #page-loader .loader-brand span { color: #ff6b35; }
     #page-loader .loader-spin {
       width: 1.5rem; height: 1.5rem; border-radius: 50%;
       border: 2px solid #d7dee4; border-top-color: #ff6b35;
@@ -37,11 +47,11 @@ $prefix = ($base === '' || $base === '/') ? '' : $base;
 </head>
 <body>
   <div id="page-loader" aria-live="polite" aria-busy="true">
-    <div class="loader-brand"><?= View::e($siteBrand ?? 'WikiMaxx') ?></div>
+    <div class="loader-brand"><?= $brandHtml ?></div>
     <div class="loader-spin" aria-hidden="true"></div>
   </div>
   <header class="top">
-    <a class="brand" href="<?= View::e($prefix) ?>/"><?= View::e($siteBrand ?? 'WikiMaxx') ?></a>
+    <a class="brand" href="<?= View::e($prefix) ?>/"><?= $brandHtml ?></a>
     <form class="top-search" method="get" action="<?= View::e($prefix) ?>/search" role="search">
       <label class="sr-only" for="top-search-q">Caută</label>
       <input id="top-search-q" type="search" name="q"
