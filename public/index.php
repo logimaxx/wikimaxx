@@ -8,6 +8,7 @@ use WikiMaxx\Auth;
 use WikiMaxx\ContentTree;
 use WikiMaxx\Csrf;
 use WikiMaxx\Markdown;
+use WikiMaxx\Search;
 use WikiMaxx\View;
 
 $config = require dirname(__DIR__) . '/bootstrap.php';
@@ -75,6 +76,30 @@ if ($path === 'login') {
 if ($path === 'logout') {
     $auth->logout();
     $redirect('/');
+}
+
+// ——— Search ———
+if ($path === 'search') {
+    $q = trim((string) ($_GET['q'] ?? ''));
+    $tooShort = $q !== '' && mb_strlen($q) < Search::minQueryLen();
+    $results = [];
+    if ($q !== '' && !$tooShort) {
+        $results = (new Search($tree))->query($q, $roles);
+    }
+    $view->render('search', [
+        'title' => $q !== '' ? ('Căutare: ' . $q) : 'Căutare',
+        'user' => $user,
+        'nav' => $tree->nav($roles),
+        'flash' => $flash,
+        'csrf' => $csrf,
+        'base' => $base,
+        'searchQuery' => $q,
+        'q' => $q,
+        'results' => $results,
+        'tooShort' => $tooShort,
+        'minQueryLen' => Search::minQueryLen(),
+    ]);
+    exit;
 }
 
 // ——— Admin ———

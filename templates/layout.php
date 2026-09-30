@@ -42,6 +42,12 @@ $prefix = ($base === '' || $base === '/') ? '' : $base;
   </div>
   <header class="top">
     <a class="brand" href="<?= View::e($prefix) ?>/"><?= View::e($siteBrand ?? 'WikiMaxx') ?></a>
+    <form class="top-search" method="get" action="<?= View::e($prefix) ?>/search" role="search">
+      <label class="sr-only" for="top-search-q">Caută</label>
+      <input id="top-search-q" type="search" name="q"
+             value="<?= View::e($searchQuery ?? '') ?>"
+             placeholder="Caută…" autocomplete="off">
+    </form>
     <nav class="top-actions">
       <?php if ($user): ?>
         <span class="who"><?= View::e($user['username']) ?></span>

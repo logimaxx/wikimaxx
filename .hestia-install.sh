@@ -8,6 +8,7 @@
 # secrets.env (build-only) may set:
 #   SESSION_SECRET, ADMIN_USER, ADMIN_PASSWORD, ADMIN_EMAIL
 #   CONTENT_ROOT, USERS_PATH, WIKIMAXX_RUNTIME, SEED_CONTENT=yes
+#   FORCE_ENV_REFRESH=1  — regenerate runtime dotenv from secrets (wipes manual edits)
 set -euo pipefail
 
 composer install --no-dev --optimize-autoloader
@@ -19,20 +20,20 @@ RUNTIME="${WIKIMAXX_RUNTIME:-${SITE_ROOT}/private/wikimaxx-runtime}"
 mkdir -p "${RUNTIME}/data" "${RUNTIME}/content"
 
 RUNTIME_ENV="${RUNTIME}/dotenv"
+LEGACY_ENV="${SITE_ROOT}/wikimaxx-runtime/dotenv"
+# Previous release (still on disk while this INSTALL_CMD runs in git-src)
+LIVE_ENV="${SITE_ROOT}/public_html/dotenv"
+
 CONTENT_ROOT="${CONTENT_ROOT:-${RUNTIME}/content}"
 USERS_PATH="${USERS_PATH:-${RUNTIME}/data/users.json}"
 ROLES_PATH="${ROLES_PATH:-${RUNTIME}/data/roles.json}"
 
-if [[ ! -f "${RUNTIME_ENV}" || "${FORCE_ENV_REFRESH:-}" == "1" ]]; then
-	if [[ -z "${SESSION_SECRET:-}" || "${SESSION_SECRET}" == "change-me"* ]]; then
-		SESSION_SECRET="$(openssl rand -hex 32)"
-		echo "Generated SESSION_SECRET (stored in ${RUNTIME_ENV})"
-	fi
+write_runtime_env() {
 	umask 077
 	cat >"${RUNTIME_ENV}" <<EOF
 CONTENT_ROOT=${CONTENT_ROOT}
 USERS_PATH=${USERS_PATH}
-ROLES_PATH=${ROLES_PATH:-${RUNTIME}/data/roles.json}
+ROLES_PATH=${ROLES_PATH}
 SESSION_SECRET=${SESSION_SECRET}
 ADMIN_USER=${ADMIN_USER:-admin}
 ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
@@ -40,8 +41,32 @@ ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
 EOF
 	chmod 600 "${RUNTIME_ENV}"
 	echo "Wrote ${RUNTIME_ENV}"
-else
+}
+
+if [[ "${FORCE_ENV_REFRESH:-}" == "1" ]]; then
+	if [[ -z "${SESSION_SECRET:-}" || "${SESSION_SECRET}" == "change-me"* ]]; then
+		SESSION_SECRET="$(openssl rand -hex 32)"
+		echo "Generated SESSION_SECRET (stored in ${RUNTIME_ENV})"
+	fi
+	write_runtime_env
+elif [[ -f "${LIVE_ENV}" ]]; then
+	# Preserve manual edits made on the live release
+	cp -f "${LIVE_ENV}" "${RUNTIME_ENV}"
+	chmod 600 "${RUNTIME_ENV}"
+	echo "Synced live dotenv → ${RUNTIME_ENV}"
+elif [[ -f "${RUNTIME_ENV}" ]]; then
 	echo "Reusing ${RUNTIME_ENV}"
+elif [[ -f "${LEGACY_ENV}" ]]; then
+	mkdir -p "$(dirname "${RUNTIME_ENV}")"
+	cp -f "${LEGACY_ENV}" "${RUNTIME_ENV}"
+	chmod 600 "${RUNTIME_ENV}"
+	echo "Migrated legacy dotenv → ${RUNTIME_ENV}"
+else
+	if [[ -z "${SESSION_SECRET:-}" || "${SESSION_SECRET}" == "change-me"* ]]; then
+		SESSION_SECRET="$(openssl rand -hex 32)"
+		echo "Generated SESSION_SECRET (stored in ${RUNTIME_ENV})"
+	fi
+	write_runtime_env
 fi
 
 # Ship as dotenv (not .env*) so the release rsync keeps it

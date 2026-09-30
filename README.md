@@ -115,4 +115,6 @@ ADMIN_EMAIL=you@example.com
 
 After the first successful deploy, set the domain **Custom document root → Directory** to `public` (Hestia UI or `v-change-web-domain-docroot USER DOMAIN DOMAIN public`).
 
-Runtime state lives in `private/wikimaxx-runtime/` under the domain (dotenv, `data/`, default `content/`) and is reused on later deploys.
+Runtime state lives in `private/wikimaxx-runtime/` under the domain (`dotenv`, `data/`, default `content/`). On later deploys the install script **reuses** that env: it prefers the live `public_html/dotenv` (so manual edits survive), then `private/wikimaxx-runtime/dotenv`, then the legacy `wikimaxx-runtime/dotenv`. Only `FORCE_ENV_REFRESH=1` in `secrets.env` regenerates from secrets (and resets `SESSION_SECRET` if you did not set one).
+
+Edit either `public_html/dotenv` or `private/wikimaxx-runtime/dotenv` — do not put secrets only in `secrets.env` after the first deploy unless you force a refresh.
