@@ -242,6 +242,24 @@ details[open] > .nav-summary > .nav-twist { transform: rotate(90deg); }
 .prose th { background: var(--soft); text-align: left; font-weight: 600; }
 .prose hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
 .dir-list { padding-left: 1.2rem; }
+.lib-switch {
+  list-style: none;
+  margin: 0 0 0.85rem;
+  padding: 0 0 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+.lib-switch a {
+  display: block;
+  padding: 0.28rem 0.45rem;
+  text-decoration: none;
+  color: var(--ink);
+  font-weight: 600;
+}
+.lib-switch a:hover { background: var(--soft); text-decoration: none; }
+.lib-switch a.is-active {
+  background: var(--soft);
+  box-shadow: inset 3px 0 0 var(--mark);
+}
 
 .auth-box {
   max-width: 360px;

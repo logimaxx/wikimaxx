@@ -7,7 +7,15 @@ use WikiMaxx\View;
 /** @var string|null $editRel */
 /** @var string|null $orderRel */
 /** @var string $base */
+/** @var string $libraryId */
 $prefix = ($base === '' || $base === '/') ? '' : $base;
+$libraryId = $libraryId ?? '';
+$adminQ = static function (array $q) use ($libraryId): string {
+    if ($libraryId !== '') {
+        $q = ['lib' => $libraryId] + $q;
+    }
+    return '/admin?' . http_build_query($q);
+};
 ?>
 <?php if ($breadcrumb): ?>
 <nav class="crumbs" aria-label="Breadcrumb">
@@ -21,11 +29,11 @@ $prefix = ($base === '' || $base === '/') ? '' : $base;
 <?php if ($canEdit && ($editRel || $orderRel !== null)): ?>
   <p class="edit-link">
     <?php if ($editRel): ?>
-      <a href="<?= View::e($prefix) ?>/admin?edit=<?= View::e(rawurlencode($editRel)) ?>">Editează</a>
+      <a href="<?= View::e($prefix . $adminQ(['edit' => $editRel])) ?>">Editează</a>
     <?php endif; ?>
     <?php if ($orderRel !== null): ?>
       <?php if ($editRel): ?><span class="sep">·</span><?php endif; ?>
-      <a href="<?= View::e($prefix) ?>/admin?<?= View::e(http_build_query(['path' => $orderRel, 'order' => '1'])) ?>">Ordonează</a>
+      <a href="<?= View::e($prefix . $adminQ(['path' => $orderRel, 'order' => '1'])) ?>">Ordonează</a>
     <?php endif; ?>
   </p>
 <?php endif; ?>

@@ -8,12 +8,23 @@ final class ContentTree
 {
     public function __construct(
         private readonly string $contentRoot,
+        private readonly string $mount = '',
+        private readonly bool $createIfMissing = true,
     ) {
+    }
+
+    /** URL prefix for this tree, e.g. `/maxxops`, or empty when the tree is the whole site. */
+    public function mount(): string
+    {
+        return $this->mount;
     }
 
     public function root(): string
     {
         if (!is_dir($this->contentRoot)) {
+            if (!$this->createIfMissing) {
+                throw new \RuntimeException('Content root is not a directory: ' . $this->contentRoot);
+            }
             mkdir($this->contentRoot, 0755, true);
         }
         $real = realpath($this->contentRoot);
@@ -127,7 +138,7 @@ final class ContentTree
                     'type' => 'dir',
                     'name' => $name,
                     'title' => self::dirTitle($abs, $name),
-                    'href' => '/' . $childRel . '/',
+                    'href' => $this->href($childRel, true),
                     'children' => $children,
                 ];
                 continue;
@@ -142,15 +153,11 @@ final class ContentTree
             }
             $meta = Markdown::parseFile($abs);
             $slug = substr($name, 0, -3);
-            $hrefRel = $relDir === '' ? $slug : $relDir . '/' . $slug;
-            if ($slug === 'index' && $relDir === '') {
-                $hrefRel = '';
-            }
             $files[] = [
                 'type' => 'file',
                 'name' => $slug,
                 'title' => $meta['title'] ?? self::humanize($slug),
-                'href' => '/' . ltrim($hrefRel, '/'),
+                'href' => $this->href($relDir === '' ? $slug : $relDir . '/' . $slug, false),
             ];
         }
 
@@ -188,7 +195,7 @@ final class ContentTree
                     'type' => 'dir',
                     'name' => $name,
                     'title' => self::dirTitle($childAbs, $name),
-                    'href' => '/' . $childRel . '/',
+                    'href' => $this->href($childRel, true),
                 ];
             } elseif (str_ends_with($name, '.md') && $name !== 'index.md') {
                 $meta = Markdown::parseFile($childAbs);
@@ -197,7 +204,7 @@ final class ContentTree
                     'type' => 'file',
                     'name' => $slug,
                     'title' => $meta['title'] ?? self::humanize($slug),
-                    'href' => '/' . ($relDir === '' ? $slug : $relDir . '/' . $slug),
+                    'href' => $this->href($relDir === '' ? $slug : $relDir . '/' . $slug, false),
                 ];
             }
         }
@@ -479,5 +486,15 @@ final class ContentTree
             return null;
         }
         return $parentReal . '/' . basename($candidate);
+    }
+
+    private function href(string $rel, bool $dir): string
+    {
+        $rel = trim(str_replace('\\', '/', $rel), '/');
+        if ($rel === '') {
+            return $this->mount === '' ? '/' : $this->mount . '/';
+        }
+        $path = ($this->mount === '' ? '' : $this->mount) . '/' . $rel;
+        return $dir ? $path . '/' : $path;
     }
 }

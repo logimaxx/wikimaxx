@@ -8,7 +8,7 @@ php bin/seed-admin.php
 php -S 127.0.0.1:8080 -t public public/router.php
 ```
 
-PHP ≥ 8.2. Runtime content: `CONTENT_ROOT` (often a separate docs repo). Demo seed in git: `seed/`.
+PHP ≥ 8.2. Runtime content: `CONTENT_ROOT` (often a separate docs repo). Optional `LIBRARIES_PATH` mounts several trees at `/{id}/`; without that file, `CONTENT_ROOT` stays at `/`. Demo seed in git: `seed/`.
 
 ## What this app is
 

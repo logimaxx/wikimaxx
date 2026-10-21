@@ -2,7 +2,19 @@
 use WikiMaxx\View;
 /** @var list<array> $nav */
 /** @var string $base */
+/** @var list<array{id: string, title: string, href: string, active: bool}> $librarySwitcher */
 $prefix = ($base === '' || $base === '/') ? '' : $base;
+$librarySwitcher = $librarySwitcher ?? [];
+
+if ($librarySwitcher !== []) {
+    echo '<ul class="lib-switch">';
+    foreach ($librarySwitcher as $lib) {
+        $cls = !empty($lib['active']) ? ' class="is-active"' : '';
+        echo '<li><a' . $cls . ' href="' . View::e($prefix . $lib['href']) . '">'
+            . View::e($lib['title']) . '</a></li>';
+    }
+    echo '</ul>';
+}
 
 $current = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 if ($prefix !== '' && str_starts_with($current, $prefix)) {

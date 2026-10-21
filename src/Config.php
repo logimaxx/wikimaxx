@@ -15,7 +15,20 @@ final class Config
         public readonly string $adminUser,
         public readonly string $adminPassword,
         public readonly string $adminEmail,
+        public readonly string $librariesPath = '',
     ) {
+    }
+
+    /** Absolute path. Relative paths are from the application root. */
+    public static function resolvePath(string $root, string $path): string
+    {
+        if ($path === '') {
+            return $root;
+        }
+        if ($path[0] === '/' || (strlen($path) > 1 && $path[1] === ':')) {
+            return $path;
+        }
+        return $root . '/' . $path;
     }
 
     public static function load(string $root): self
@@ -37,25 +50,18 @@ final class Config
             }
         }
 
-        $resolve = static function (string $path) use ($root): string {
-            if ($path === '') {
-                return $root;
-            }
-            if ($path[0] === '/' || (strlen($path) > 1 && $path[1] === ':')) {
-                return $path;
-            }
-            return $root . '/' . $path;
-        };
+        $librariesRaw = trim($vars['LIBRARIES_PATH'] ?? '');
 
         return new self(
             root: $root,
-            contentRoot: $resolve($vars['CONTENT_ROOT'] ?? 'content'),
-            sqlitePath: $resolve($vars['USERS_PATH'] ?? $vars['SQLITE_PATH'] ?? 'data/users.json'),
-            rolesPath: $resolve($vars['ROLES_PATH'] ?? 'data/roles.json'),
+            contentRoot: self::resolvePath($root, $vars['CONTENT_ROOT'] ?? 'content'),
+            sqlitePath: self::resolvePath($root, $vars['USERS_PATH'] ?? $vars['SQLITE_PATH'] ?? 'data/users.json'),
+            rolesPath: self::resolvePath($root, $vars['ROLES_PATH'] ?? 'data/roles.json'),
             sessionSecret: $vars['SESSION_SECRET'] ?? 'dev-insecure-secret',
             adminUser: $vars['ADMIN_USER'] ?? 'admin',
             adminPassword: $vars['ADMIN_PASSWORD'] ?? '',
             adminEmail: $vars['ADMIN_EMAIL'] ?? 'admin@example.com',
+            librariesPath: $librariesRaw === '' ? '' : self::resolvePath($root, $librariesRaw),
         );
     }
 }

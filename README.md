@@ -2,7 +2,7 @@
 
 Flat-file **wiki / documentation engine**: scans a Markdown tree, builds navigation, renders pages, optional ACL by role, in-browser admin edit.
 
-Content lives outside the app (or in a separate docs repo). Set `CONTENT_ROOT` in `.env`.
+Content lives outside the app (or in a separate docs repo). Set `CONTENT_ROOT` in `.env`. To serve several trees, set `LIBRARIES_PATH` to a JSON registry; each library is mounted at `/{id}/` and `/` lists them. Without that file, `CONTENT_ROOT` stays the whole site at `/`.
 
 ## Requirements
 
@@ -31,6 +31,20 @@ Open http://127.0.0.1:8080 — admin from `.env`.
 CONTENT_ROOT=../maxxops_documentation/wiki
 ```
 
+### Several libraries
+
+Copy [libraries.example.json](libraries.example.json) to `libraries.json` (gitignored) and set `LIBRARIES_PATH=libraries.json`.
+
+```json
+[
+  { "id": "maxxops", "title": "MaxxOps", "path": "../maxxops_documentation/wiki" }
+]
+```
+
+`id` is `[a-z0-9][a-z0-9-]*` and must not be `login`, `logout`, `search`, `admin`, or `assets`. `path` must already be a directory (relative to the app root, same as `CONTENT_ROOT`). `title` is optional: root `_access.json` title, then the id. Each library keeps its own `_access.json` walk, stopping at that library's root. Users and roles stay global.
+
+`/` is the catalog of libraries the reader can open. Pages live at `/{id}/…`. Search covers every readable library. Admin asks which library to edit (`/admin?lib={id}`). Relative Markdown links keep working. Links that start with `/` leave the library.
+
 ## Layout
 
 ```
@@ -39,6 +53,7 @@ src/              # WikiMaxx\ (Auth, Acl, ContentTree, …)
 templates/
 seed/             # minimal demo content (git)
 content/          # default local CONTENT_ROOT (gitignored) if you migrate seed here
+libraries.json    # optional multi-library registry (gitignored)
 data/users.json   # accounts (gitignored)
 data/roles.json   # role catalog (gitignored; seeded on first boot)
 bin/              # migrate-content.php, seed-admin.php
@@ -110,6 +125,7 @@ ADMIN_EMAIL=you@example.com
 # optional — auto-generated on first deploy if omitted:
 # SESSION_SECRET=<long-random>
 # CONTENT_ROOT=/absolute/path/to/wiki
+# LIBRARIES_PATH=/absolute/path/to/libraries.json
 # SEED_CONTENT=yes
 ```
 

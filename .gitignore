@@ -2,6 +2,7 @@
 /vendor/
 /data/
 /content/
+/libraries.json
 .env
 .env.local
 .env.production

@@ -7,19 +7,25 @@ use WikiMaxx\AdminService;
 use WikiMaxx\Auth;
 use WikiMaxx\ContentTree;
 use WikiMaxx\Csrf;
+use WikiMaxx\Library;
+use WikiMaxx\LibraryRegistry;
 use WikiMaxx\Markdown;
 use WikiMaxx\Search;
 use WikiMaxx\View;
 
 $config = require dirname(__DIR__) . '/bootstrap.php';
 $auth = new Auth($config);
-$tree = new ContentTree($config->contentRoot);
-$rootAcl = Acl::resolve($tree->root(), $tree->root());
-$siteBrand = (is_string($rootAcl['title'] ?? null) && $rootAcl['title'] !== '')
-    ? $rootAcl['title']
-    : 'WikiMaxx';
+$registry = LibraryRegistry::load($config);
+if ($registry->multi()) {
+    $siteBrand = 'WikiMaxx';
+} else {
+    $rootTree = $registry->primary()->tree;
+    $rootAcl = Acl::resolve($rootTree->root(), $rootTree->root());
+    $siteBrand = (is_string($rootAcl['title'] ?? null) && $rootAcl['title'] !== '')
+        ? $rootAcl['title']
+        : 'WikiMaxx';
+}
 $view = new View(dirname(__DIR__) . '/templates', $siteBrand);
-$admin = new AdminService($tree, $auth);
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
@@ -47,6 +53,28 @@ $flashSet = static function (string $type, string $msg): void {
 $user = $auth->user();
 $roles = $auth->roles();
 $csrf = Csrf::token($config);
+
+$shell = static function (array $data, ?Library $current = null) use (
+    &$flash,
+    $user,
+    $roles,
+    $csrf,
+    $base,
+    $registry
+): array {
+    $inLibrary = $current !== null && $current->id !== '';
+    $data['user'] = $user;
+    $data['nav'] = shellNav($registry, $roles, $inLibrary ? $current : null);
+    $data['librarySwitcher'] = librarySwitcher($registry, $roles, $inLibrary ? $current : null);
+    $data['flash'] = $flash;
+    $data['csrf'] = $csrf;
+    $data['base'] = $base;
+    $data['libraryId'] = $inLibrary ? $current->id : '';
+    if ($inLibrary) {
+        $data['siteBrand'] = $current->title;
+    }
+    return $data;
+};
 
 // ——— Auth routes ———
 if ($path === 'login') {
@@ -84,21 +112,16 @@ if ($path === 'search') {
     $tooShort = $q !== '' && mb_strlen($q) < Search::minQueryLen();
     $results = [];
     if ($q !== '' && !$tooShort) {
-        $results = (new Search($tree))->query($q, $roles);
+        $results = searchAll($registry, $roles, $q);
     }
-    $view->render('search', [
+    $view->render('search', $shell([
         'title' => $q !== '' ? ('Căutare: ' . $q) : 'Căutare',
-        'user' => $user,
-        'nav' => $tree->nav($roles),
-        'flash' => $flash,
-        'csrf' => $csrf,
-        'base' => $base,
         'searchQuery' => $q,
         'q' => $q,
         'results' => $results,
         'tooShort' => $tooShort,
         'minQueryLen' => Search::minQueryLen(),
-    ]);
+    ]));
     exit;
 }
 
@@ -118,7 +141,21 @@ if (str_starts_with($path, 'admin')) {
             echo 'Forbidden';
             exit;
         }
-        handleUsers($adminPath, $method, $auth, $config, $view, $user, $tree, $roles, $flash, $csrf, $base, $flashSet, $redirect);
+        handleUsers(
+            $adminPath,
+            $method,
+            $auth,
+            $config,
+            $view,
+            $user,
+            shellNav($registry, $roles, null),
+            $roles,
+            $flash,
+            $csrf,
+            $base,
+            $flashSet,
+            $redirect
+        );
         exit;
     }
 
@@ -128,14 +165,62 @@ if (str_starts_with($path, 'admin')) {
             echo 'Forbidden';
             exit;
         }
-        handleRoles($method, $auth, $config, $view, $user, $tree, $roles, $flash, $csrf, $base, $flashSet, $redirect);
+        handleRoles(
+            $method,
+            $auth,
+            $config,
+            $view,
+            $user,
+            shellNav($registry, $roles, null),
+            aclRoleIds($registry),
+            $roles,
+            $flash,
+            $csrf,
+            $base,
+            $flashSet,
+            $redirect
+        );
         exit;
     }
+
+    $active = null;
+    if ($registry->multi()) {
+        $requested = trim((string) ($_POST['lib'] ?? $_GET['lib'] ?? ''));
+        $active = $requested === '' ? null : $registry->get($requested);
+        if ($active === null) {
+            if ($method === 'POST') {
+                $flashSet('error', 'Bibliotecă invalidă.');
+                $redirect('/admin');
+            }
+            if ($requested !== '') {
+                $flash = ['type' => 'error', 'message' => 'Bibliotecă invalidă.'];
+            }
+            $choices = [];
+            foreach ($registry->all() as $lib) {
+                $choices[] = [
+                    'id' => $lib->id,
+                    'title' => $lib->title,
+                    'href' => '/admin?lib=' . rawurlencode($lib->id),
+                ];
+            }
+            $view->render('admin', $shell([
+                'title' => 'Admin conținut',
+                'chooseLibrary' => true,
+                'libraryChoices' => $choices,
+            ]));
+            exit;
+        }
+        $tree = $active->tree;
+    } else {
+        $tree = $registry->primary()->tree;
+    }
+    $admin = new AdminService($tree, $auth);
+    $libraryId = $active !== null ? $active->id : '';
 
     if ($method === 'POST') {
         if (!Csrf::validate($config, $_POST['_csrf'] ?? null)) {
             $flashSet('error', 'Sesiune invalidă.');
-            $redirect('/admin');
+            $redirect($libraryId === '' ? '/admin' : '/admin?lib=' . rawurlencode($libraryId));
         }
         $action = (string) ($_POST['action'] ?? '');
         try {
@@ -212,9 +297,11 @@ if (str_starts_with($path, 'admin')) {
         $flash = ['type' => 'error', 'message' => $e->getMessage()];
     }
 
-    $adminPathQ = static function (string $path, array $extra = []) : string {
-        $q = array_merge(['path' => $path], $extra);
-        // keep empty path in query for stable redirects
+    $adminPathQ = static function (string $folder, array $extra = []) use ($libraryId): string {
+        $q = array_merge(['path' => $folder], $extra);
+        if ($libraryId !== '') {
+            $q = ['lib' => $libraryId] + $q;
+        }
         return '/admin?' . http_build_query($q);
     };
 
@@ -251,14 +338,11 @@ if (str_starts_with($path, 'admin')) {
     }
 
     $browseParent = $browseRel === '' ? null : (dirname($browseRel) === '.' ? '' : dirname($browseRel));
+    $current = ($active !== null && $active->id !== '') ? $active : null;
 
-    $view->render('admin', [
+    $view->render('admin', $shell([
         'title' => 'Admin conținut',
-        'user' => $user,
-        'nav' => $tree->nav($roles),
-        'flash' => $flash,
-        'csrf' => $csrf,
-        'base' => $base,
+        'chooseLibrary' => false,
         'browseRel' => $browseRel,
         'browseParent' => $browseParent,
         'browseItems' => $browseItems,
@@ -268,38 +352,76 @@ if (str_starts_with($path, 'admin')) {
         'accessContent' => $accessContent,
         'orderContent' => $orderContent,
         'isAdmin' => $auth->isAdmin(),
-    ]);
+        'mount' => $tree->mount(),
+        'libraryTitle' => $current !== null ? $current->title : '',
+    ], $current));
+    exit;
+}
+
+// ——— Catalog ———
+if ($registry->multi() && $path === '') {
+    $items = [];
+    foreach ($registry->readable($roles) as $lib) {
+        $items[] = ['title' => $lib->title, 'href' => '/' . $lib->id . '/'];
+    }
+    $view->render('catalog', $shell([
+        'title' => 'Biblioteci',
+        'libraries' => $items,
+    ]));
     exit;
 }
 
 // ——— Content / assets ———
-$resolved = $tree->resolve($path);
+$active = null;
+$contentPath = $path;
+if ($registry->multi()) {
+    $parts = explode('/', $path, 2);
+    $active = $registry->get($parts[0]);
+    if ($active === null) {
+        http_response_code(404);
+        $view->render('doc', $shell([
+            'title' => 'Negăsit',
+            'html' => '<p>Pagina nu există.</p>',
+            'pageTitle' => '404',
+            'breadcrumb' => [],
+            'canEdit' => false,
+            'editRel' => null,
+            'orderRel' => null,
+        ]));
+        exit;
+    }
+    $contentPath = $parts[1] ?? '';
+    $tree = $active->tree;
+} else {
+    $tree = $registry->primary()->tree;
+}
+
+$resolved = $tree->resolve($contentPath);
+$current = ($active !== null && $active->id !== '') ? $active : null;
 if ($resolved === null) {
     http_response_code(404);
-    $view->render('doc', [
+    $view->render('doc', $shell([
         'title' => 'Negăsit',
-        'user' => $user,
-        'nav' => $tree->nav($roles),
-        'flash' => $flash,
-        'csrf' => $csrf,
-        'base' => $base,
         'html' => '<p>Pagina nu există.</p>',
         'pageTitle' => '404',
         'breadcrumb' => [],
         'canEdit' => false,
         'editRel' => null,
         'orderRel' => null,
-    ]);
+    ], $current));
     exit;
 }
 
 // Canonical trailing slash on folder URLs so relative Markdown links resolve correctly.
-if ($method === 'GET' && $path !== '' && !$uriHadTrailingSlash) {
-    $isFolderUrl = $resolved['type'] === 'dir'
+if ($method === 'GET' && !$uriHadTrailingSlash) {
+    $isLibraryRoot = $current !== null && $contentPath === '';
+    $isFolderUrl = $isLibraryRoot
+        || $resolved['type'] === 'dir'
         || ($resolved['type'] === 'file' && str_ends_with($resolved['rel'], '/index.md')
-            && $path === str_replace('\\', '/', dirname($resolved['rel'])));
-    if ($isFolderUrl) {
-        $redirect('/' . $path . '/');
+            && $contentPath === str_replace('\\', '/', dirname($resolved['rel'])));
+    if ($isFolderUrl && ($contentPath !== '' || $isLibraryRoot)) {
+        $mount = $current !== null ? $current->mount() : '';
+        $redirect($mount . ($contentPath === '' ? '/' : '/' . $contentPath . '/'));
     }
 }
 
@@ -325,25 +447,19 @@ if (!Acl::canRead($acl, $roles)) {
         $flashSet('error', 'Această zonă necesită autentificare.');
         $redirect('/login');
     }
-    $view->render('doc', [
+    $view->render('doc', $shell([
         'title' => 'Acces interzis',
-        'user' => $user,
-        'nav' => $tree->nav($roles),
-        'flash' => $flash,
-        'csrf' => $csrf,
-        'base' => $base,
         'html' => '<p>Nu ai dreptul să vezi această pagină.</p>',
         'pageTitle' => '403',
         'breadcrumb' => [],
         'canEdit' => false,
         'editRel' => null,
         'orderRel' => null,
-    ]);
+    ], $current));
     exit;
 }
 
-$nav = $tree->nav($roles);
-$breadcrumb = breadcrumbFromPath($tree, $path);
+$breadcrumb = breadcrumbFromPath($tree, $contentPath, $current?->mount() ?? '', $current?->title ?? '');
 
 if ($resolved['type'] === 'dir') {
     $listing = $tree->listChildren($resolved['path'], $resolved['rel'], $roles);
@@ -356,20 +472,15 @@ if ($resolved['type'] === 'dir') {
     }
     $html .= '</ul>';
     $canEditHere = $auth->canEditContent() && Acl::canWrite($roles, $acl);
-    $view->render('doc', [
+    $view->render('doc', $shell([
         'title' => $title,
-        'user' => $user,
-        'nav' => $nav,
-        'flash' => $flash,
-        'csrf' => $csrf,
-        'base' => $base,
         'html' => $html,
         'pageTitle' => $title,
         'breadcrumb' => $breadcrumb,
         'canEdit' => $canEditHere,
         'editRel' => null,
         'orderRel' => $canEditHere ? $resolved['rel'] : null,
-    ]);
+    ], $current));
     exit;
 }
 
@@ -383,32 +494,115 @@ if ($parentRel === '.' || $parentRel === '/') {
     $parentRel = '';
 }
 
-$view->render('doc', [
+$view->render('doc', $shell([
     'title' => $pageTitle,
-    'user' => $user,
-    'nav' => $nav,
-    'flash' => $flash,
-    'csrf' => $csrf,
-    'base' => $base,
     'html' => $html,
     'pageTitle' => $pageTitle,
     'breadcrumb' => $breadcrumb,
     'canEdit' => $canEditHere,
     'editRel' => $editRel,
     'orderRel' => $canEditHere ? $parentRel : null,
-]);
+], $current));
 exit;
+
+/**
+ * @param list<string>|null $roles
+ * @return list<array{type: string, name: string, title: string, href: string}>
+ */
+function shellNav(LibraryRegistry $registry, ?array $roles, ?Library $current): array
+{
+    if ($current !== null) {
+        return $current->tree->nav($roles);
+    }
+    if (!$registry->multi()) {
+        return $registry->primary()->tree->nav($roles);
+    }
+    $nav = [];
+    foreach ($registry->readable($roles) as $lib) {
+        $nav[] = [
+            'type' => 'file',
+            'name' => $lib->id,
+            'title' => $lib->title,
+            'href' => '/' . $lib->id . '/',
+        ];
+    }
+    return $nav;
+}
+
+/**
+ * @param list<string>|null $roles
+ * @return list<array{id: string, title: string, href: string, active: bool}>
+ */
+function librarySwitcher(LibraryRegistry $registry, ?array $roles, ?Library $current): array
+{
+    if (!$registry->multi() || $current === null) {
+        return [];
+    }
+    $out = [];
+    foreach ($registry->readable($roles) as $lib) {
+        $out[] = [
+            'id' => $lib->id,
+            'title' => $lib->title,
+            'href' => '/' . $lib->id . '/',
+            'active' => $lib->id === $current->id,
+        ];
+    }
+    return $out;
+}
+
+/**
+ * @param list<string>|null $roles
+ * @return list<array{title: string, href: string, path: string, snippet: string, score: int, library: string}>
+ */
+function searchAll(LibraryRegistry $registry, ?array $roles, string $q): array
+{
+    $libs = $registry->multi() ? $registry->readable($roles) : [$registry->primary()];
+    $hits = [];
+    foreach ($libs as $lib) {
+        $label = $registry->multi() ? $lib->title : '';
+        foreach ((new Search($lib->tree, $label))->query($q, $roles, 10000) as $hit) {
+            $hits[] = $hit;
+        }
+    }
+    usort($hits, static function (array $a, array $b): int {
+        if ($a['score'] !== $b['score']) {
+            return $b['score'] <=> $a['score'];
+        }
+        return strcasecmp($a['title'], $b['title']);
+    });
+    return array_slice($hits, 0, 50);
+}
+
+/** @return list<string> */
+function aclRoleIds(LibraryRegistry $registry): array
+{
+    $found = [];
+    foreach ($registry->all() as $lib) {
+        foreach (\WikiMaxx\Roles::scanAccessRoles($lib->tree->root()) as $id) {
+            $found[$id] = $id;
+        }
+    }
+    return array_values($found);
+}
+
 /**
  * @return list<array{title: string, href: string}>
  */
-function breadcrumbFromPath(ContentTree $tree, string $path): array
+function breadcrumbFromPath(ContentTree $tree, string $path, string $mount = '', string $libraryTitle = ''): array
 {
-    $parts = array_values(array_filter(explode('/', trim($path, '/'))));
     $crumbs = [['title' => 'Acasă', 'href' => '/']];
-    $acc = '';
+    if ($mount !== '') {
+        $crumbs[] = [
+            'title' => $libraryTitle !== '' ? $libraryTitle : trim($mount, '/'),
+            'href' => $mount . '/',
+        ];
+    }
+    $parts = array_values(array_filter(explode('/', trim($path, '/'))));
+    $acc = $mount;
     foreach ($parts as $p) {
         $acc .= '/' . $p;
-        $crumbs[] = ['title' => $tree->titleForRel(ltrim($acc, '/')), 'href' => $acc];
+        $rel = $mount === '' ? ltrim($acc, '/') : ltrim(substr($acc, strlen($mount)), '/');
+        $crumbs[] = ['title' => $tree->titleForRel($rel), 'href' => $acc];
     }
     return $crumbs;
 }
@@ -418,6 +612,7 @@ function breadcrumbFromPath(ContentTree $tree, string $path): array
  * @param callable(string, string): void $flashSet
  * @param array{type: string, message: string}|null $flash
  * @param array{id: int, username: string, email: string, roles: list<string>}|null $user
+ * @param list<array{type: string, name: string, title: string, href: string}> $nav
  * @param list<string>|null $roles
  */
 function handleUsers(
@@ -427,7 +622,7 @@ function handleUsers(
     mixed $config,
     View $view,
     ?array $user,
-    ContentTree $tree,
+    array $nav,
     ?array $roles,
     ?array $flash,
     string $csrf,
@@ -475,7 +670,7 @@ function handleUsers(
     $view->render('users', [
         'title' => 'Utilizatori',
         'user' => $user,
-        'nav' => $tree->nav($roles),
+        'nav' => $nav,
         'flash' => $flash,
         'csrf' => $csrf,
         'base' => $base,
@@ -489,6 +684,8 @@ function handleUsers(
  * @param callable(string, string): void $flashSet
  * @param array{type: string, message: string}|null $flash
  * @param array{id: int, username: string, email: string, roles: list<string>}|null $user
+ * @param list<array{type: string, name: string, title: string, href: string}> $nav
+ * @param list<string> $usedAcl
  * @param list<string>|null $roles
  */
 function handleRoles(
@@ -497,7 +694,8 @@ function handleRoles(
     mixed $config,
     View $view,
     ?array $user,
-    ContentTree $tree,
+    array $nav,
+    array $usedAcl,
     ?array $roles,
     ?array $flash,
     string $csrf,
@@ -530,7 +728,7 @@ function handleRoles(
                 \WikiMaxx\Roles::delete(
                     (string) ($_POST['id'] ?? ''),
                     $auth->usedRoleIds(),
-                    \WikiMaxx\Roles::scanAccessRoles($tree->root())
+                    $usedAcl
                 );
             }
             $flashSet('ok', 'Salvat.');
@@ -543,12 +741,12 @@ function handleRoles(
     $view->render('roles', [
         'title' => 'Roluri',
         'user' => $user,
-        'nav' => $tree->nav($roles),
+        'nav' => $nav,
         'flash' => $flash,
         'csrf' => $csrf,
         'base' => $base,
         'catalog' => \WikiMaxx\Roles::catalog(),
         'usedUsers' => $auth->usedRoleIds(),
-        'usedAcl' => \WikiMaxx\Roles::scanAccessRoles($tree->root()),
+        'usedAcl' => $usedAcl,
     ]);
 }

@@ -8,6 +8,7 @@
 # secrets.env (build-only) may set:
 #   SESSION_SECRET, ADMIN_USER, ADMIN_PASSWORD, ADMIN_EMAIL
 #   CONTENT_ROOT, USERS_PATH, WIKIMAXX_RUNTIME, SEED_CONTENT=yes
+#   LIBRARIES_PATH  optional JSON registry; omit to keep CONTENT_ROOT at /
 #   FORCE_ENV_REFRESH=1  — regenerate runtime dotenv from secrets (wipes manual edits)
 set -euo pipefail
 
@@ -30,9 +31,13 @@ ROLES_PATH="${ROLES_PATH:-${RUNTIME}/data/roles.json}"
 
 write_runtime_env() {
 	umask 077
+	lib_env=""
+	if [[ -n "${LIBRARIES_PATH:-}" ]]; then
+		lib_env="LIBRARIES_PATH=${LIBRARIES_PATH}"$'\n'
+	fi
 	cat >"${RUNTIME_ENV}" <<EOF
 CONTENT_ROOT=${CONTENT_ROOT}
-USERS_PATH=${USERS_PATH}
+${lib_env}USERS_PATH=${USERS_PATH}
 ROLES_PATH=${ROLES_PATH}
 SESSION_SECRET=${SESSION_SECRET}
 ADMIN_USER=${ADMIN_USER:-admin}

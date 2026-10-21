@@ -12,6 +12,7 @@ final class Search
 
     public function __construct(
         private readonly ContentTree $tree,
+        private readonly string $libraryTitle = '',
     ) {
     }
 
@@ -24,7 +25,7 @@ final class Search
      * Full-text search over Markdown under CONTENT_ROOT, filtered by ACL.
      *
      * @param list<string>|null $userRoles null = guest
-     * @return list<array{title: string, href: string, path: string, snippet: string, score: int}>
+     * @return list<array{title: string, href: string, path: string, snippet: string, score: int, library: string}>
      */
     public function query(string $q, ?array $userRoles, int $limit = self::DEFAULT_LIMIT): array
     {
@@ -52,7 +53,7 @@ final class Search
 
     /**
      * @param list<string>|null $userRoles
-     * @param list<array{title: string, href: string, path: string, snippet: string, score: int}> $hits
+     * @param list<array{title: string, href: string, path: string, snippet: string, score: int, library: string}> $hits
      */
     private function walk(string $absDir, string $relDir, ?array $userRoles, string $q, array &$hits): void
     {
@@ -86,7 +87,7 @@ final class Search
     }
 
     /**
-     * @return array{title: string, href: string, path: string, snippet: string, score: int}|null
+     * @return array{title: string, href: string, path: string, snippet: string, score: int, library: string}|null
      */
     private function matchFile(string $absPath, string $relMd, string $q): ?array
     {
@@ -140,11 +141,22 @@ final class Search
 
         return [
             'title' => $title,
-            'href' => self::hrefFromRelMd($relMd),
+            'href' => $this->mountedHref($relMd),
             'path' => self::displayPath($relMd),
             'snippet' => $snippet,
             'score' => $score,
+            'library' => $this->libraryTitle,
         ];
+    }
+
+    private function mountedHref(string $relMd): string
+    {
+        $href = self::hrefFromRelMd($relMd);
+        $mount = $this->tree->mount();
+        if ($mount === '') {
+            return $href;
+        }
+        return $href === '/' ? $mount . '/' : $mount . $href;
     }
 
     /** URL path matching ContentTree nav (index.md → folder trailing slash). */

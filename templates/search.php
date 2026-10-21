@@ -1,7 +1,7 @@
 <?php
 use WikiMaxx\View;
 /** @var string $q */
-/** @var list<array{title: string, href: string, path: string, snippet: string, score: int}> $results */
+/** @var list<array{title: string, href: string, path: string, snippet: string, score: int, library?: string}> $results */
 /** @var bool $tooShort */
 /** @var int $minQueryLen */
 /** @var string $base */
@@ -28,7 +28,16 @@ $prefix = ($base === '' || $base === '/') ? '' : $base;
     <?php foreach ($results as $hit): ?>
       <li class="search-hit">
         <a class="search-hit-title" href="<?= View::e($prefix . $hit['href']) ?>"><?= View::e($hit['title']) ?></a>
-        <div class="search-hit-path"><?= View::e($hit['path']) ?></div>
+        <div class="search-hit-path"><?php
+          $bits = [];
+          if (($hit['library'] ?? '') !== '') {
+              $bits[] = $hit['library'];
+          }
+          if (($hit['path'] ?? '') !== '' && $hit['path'] !== '/') {
+              $bits[] = $hit['path'];
+          }
+          echo View::e(implode(' · ', $bits));
+        ?></div>
         <?php if ($hit['snippet'] !== ''): ?>
           <p class="search-hit-snippet"><?= View::e($hit['snippet']) ?></p>
         <?php endif; ?>

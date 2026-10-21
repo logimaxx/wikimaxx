@@ -11,12 +11,55 @@ use WikiMaxx\View;
 /** @var array{rel:string,json:string}|null $accessContent */
 /** @var array{rel:string,items:list<array{type:string,name:string,title:string}>,manual:bool}|null $orderContent */
 /** @var bool $isAdmin */
+/** @var bool $chooseLibrary */
+/** @var list<array{id: string, title: string, href: string}> $libraryChoices */
+/** @var string $mount */
+/** @var string $libraryId */
+/** @var string $libraryTitle */
 $prefix = ($base === '' || $base === '/') ? '' : $base;
+if (!empty($chooseLibrary)) {
+    $libraryChoices = $libraryChoices ?? [];
+    ?>
+<h1>Admin conținut</h1>
+<p class="muted">Alege biblioteca.</p>
+<?php if ($libraryChoices === []): ?>
+  <p class="muted">Nicio bibliotecă configurată.</p>
+<?php else: ?>
+  <ul class="dir-list">
+    <?php foreach ($libraryChoices as $lib): ?>
+      <li><a href="<?= View::e($prefix . $lib['href']) ?>"><?= View::e($lib['title']) ?></a></li>
+    <?php endforeach; ?>
+  </ul>
+<?php endif; ?>
+    <?php
+    return;
+}
+$libraryId = $libraryId ?? '';
+$mount = $mount ?? '';
+$libraryTitle = $libraryTitle ?? '';
+$libInput = $libraryId !== ''
+    ? '<input type="hidden" name="lib" value="' . View::e($libraryId) . '">'
+    : '';
+$publicHref = static function (string $rel, bool $dir = false) use ($mount): string {
+    $rel = trim(str_replace('\\', '/', $rel), '/');
+    if (str_ends_with($rel, '.md')) {
+        $rel = substr($rel, 0, -3);
+        if ($rel === 'index' || str_ends_with($rel, '/index')) {
+            $rel = $rel === 'index' ? '' : substr($rel, 0, -strlen('/index'));
+            $dir = true;
+        }
+    }
+    if ($rel === '') {
+        return $mount === '' ? '/' : $mount . '/';
+    }
+    $path = ($mount === '' ? '' : $mount) . '/' . $rel;
+    return $dir ? $path . '/' : $path;
+};
 $pathStay = $adminPathQ($browseRel);
 $pathOrder = $adminPathQ($browseRel, ['order' => '1']);
 $pathAccess = $adminPathQ($browseRel, ['access' => '1']);
 ?>
-<h1>Admin conținut</h1>
+<h1>Admin conținut<?= $libraryTitle !== '' ? ' · ' . View::e($libraryTitle) : '' ?></h1>
 
 <section class="admin-browse">
   <div class="browse-toolbar">
@@ -38,7 +81,7 @@ $pathAccess = $adminPathQ($browseRel, ['access' => '1']);
       <?php if ($isAdmin): ?>
         <a href="<?= View::e($prefix . $pathAccess) ?>">ACL</a>
       <?php endif; ?>
-      <a href="<?= View::e($prefix) ?>/<?= View::e($browseRel) ?>">Vezi</a>
+      <a href="<?= View::e($prefix . $publicHref($browseRel, true)) ?>">Vezi</a>
     </div>
   </div>
 
@@ -76,9 +119,10 @@ $pathAccess = $adminPathQ($browseRel, ['access' => '1']);
             <code class="browse-name"><?= View::e($item['name']) ?></code>
           </a>
           <span class="browse-row-actions">
-            <a href="<?= View::e($prefix) ?>/<?= View::e(preg_replace('/\.md$/', '', $item['rel']) ?? '') ?>">vezi</a>
+            <a href="<?= View::e($prefix . $publicHref($item['rel'])) ?>">vezi</a>
             <form method="post" action="<?= View::e($prefix) ?>/admin" class="inline" onsubmit="return confirm('Ștergi?');">
               <input type="hidden" name="_csrf" value="<?= View::e($csrf) ?>">
+              <?= $libInput ?>
               <input type="hidden" name="action" value="delete">
               <input type="hidden" name="rel" value="<?= View::e($item['rel']) ?>">
               <input type="hidden" name="redirect" value="<?= View::e($pathStay) ?>">
@@ -86,13 +130,14 @@ $pathAccess = $adminPathQ($browseRel, ['access' => '1']);
             </form>
           </span>
         <?php else: ?>
-          <a class="browse-main" href="<?= View::e($prefix) ?>/<?= View::e($item['rel']) ?>" target="_blank" rel="noopener">
+          <a class="browse-main" href="<?= View::e($prefix . $publicHref($item['rel'])) ?>" target="_blank" rel="noopener">
             <span class="browse-icon" aria-hidden="true">img</span>
             <span class="browse-title"><?= View::e($item['title']) ?></span>
           </a>
           <span class="browse-row-actions">
             <form method="post" action="<?= View::e($prefix) ?>/admin" class="inline" onsubmit="return confirm('Ștergi?');">
               <input type="hidden" name="_csrf" value="<?= View::e($csrf) ?>">
+              <?= $libInput ?>
               <input type="hidden" name="action" value="delete">
               <input type="hidden" name="rel" value="<?= View::e($item['rel']) ?>">
               <input type="hidden" name="redirect" value="<?= View::e($pathStay) ?>">
@@ -121,6 +166,7 @@ $pathAccess = $adminPathQ($browseRel, ['access' => '1']);
   <?php else: ?>
     <form method="post" action="<?= View::e($prefix) ?>/admin" class="form" id="order-form">
       <input type="hidden" name="_csrf" value="<?= View::e($csrf) ?>">
+      <?= $libInput ?>
       <input type="hidden" name="action" value="save_order">
       <input type="hidden" name="rel" value="<?= View::e($orderContent['rel']) ?>">
       <input type="hidden" name="redirect" value="<?= View::e($pathOrder) ?>">
@@ -143,6 +189,7 @@ $pathAccess = $adminPathQ($browseRel, ['access' => '1']);
     <?php if ($orderContent['manual']): ?>
       <form method="post" action="<?= View::e($prefix) ?>/admin" class="form" onsubmit="return confirm('Revii la ordinea alfabetică?');">
         <input type="hidden" name="_csrf" value="<?= View::e($csrf) ?>">
+        <?= $libInput ?>
         <input type="hidden" name="action" value="clear_order">
         <input type="hidden" name="rel" value="<?= View::e($orderContent['rel']) ?>">
         <input type="hidden" name="redirect" value="<?= View::e($pathOrder) ?>">
@@ -207,6 +254,7 @@ $pathAccess = $adminPathQ($browseRel, ['access' => '1']);
     <p class="muted"><code><?= View::e($browseRel === '' ? '/' : $browseRel) ?></code></p>
     <form method="post" action="<?= View::e($prefix) ?>/admin" class="form">
       <input type="hidden" name="_csrf" value="<?= View::e($csrf) ?>">
+      <?= $libInput ?>
       <input type="hidden" name="action" value="create_folder">
       <input type="hidden" name="parent" value="<?= View::e($browseRel) ?>">
       <input type="hidden" name="redirect" value="<?= View::e($pathStay) ?>">
@@ -218,6 +266,7 @@ $pathAccess = $adminPathQ($browseRel, ['access' => '1']);
 
     <form method="post" action="<?= View::e($prefix) ?>/admin" class="form">
       <input type="hidden" name="_csrf" value="<?= View::e($csrf) ?>">
+      <?= $libInput ?>
       <input type="hidden" name="action" value="create_page">
       <input type="hidden" name="parent" value="<?= View::e($browseRel) ?>">
       <input type="hidden" name="redirect" value="<?= View::e($pathStay) ?>">
@@ -232,6 +281,7 @@ $pathAccess = $adminPathQ($browseRel, ['access' => '1']);
 
     <form method="post" action="<?= View::e($prefix) ?>/admin" enctype="multipart/form-data" class="form">
       <input type="hidden" name="_csrf" value="<?= View::e($csrf) ?>">
+      <?= $libInput ?>
       <input type="hidden" name="action" value="upload">
       <input type="hidden" name="parent" value="<?= View::e($browseRel) ?>">
       <input type="hidden" name="redirect" value="<?= View::e($pathStay) ?>">
@@ -248,12 +298,13 @@ $pathAccess = $adminPathQ($browseRel, ['access' => '1']);
   <h2>Editează <?= View::e($editContent['rel']) ?></h2>
   <form method="post" action="<?= View::e($prefix) ?>/admin" class="form">
     <input type="hidden" name="_csrf" value="<?= View::e($csrf) ?>">
+    <?= $libInput ?>
     <input type="hidden" name="action" value="save_page">
     <input type="hidden" name="rel" value="<?= View::e($editContent['rel']) ?>">
     <input type="hidden" name="redirect" value="<?= View::e($adminPathQ($browseRel, ['edit' => $editContent['rel']])) ?>">
     <textarea name="body" rows="28" class="code"><?= View::e($editContent['body']) ?></textarea>
     <button type="submit">Salvează</button>
-    <a href="<?= View::e($prefix) ?>/<?= View::e(preg_replace('/\.md$/', '', $editContent['rel']) ?? '') ?>">Vezi pagina</a>
+    <a href="<?= View::e($prefix . $publicHref($editContent['rel'])) ?>">Vezi pagina</a>
     <a href="<?= View::e($prefix . $pathStay) ?>">Închide</a>
   </form>
 </section>
@@ -268,6 +319,7 @@ $pathAccess = $adminPathQ($browseRel, ['access' => '1']);
   ?></p>
   <form method="post" action="<?= View::e($prefix) ?>/admin" class="form">
     <input type="hidden" name="_csrf" value="<?= View::e($csrf) ?>">
+    <?= $libInput ?>
     <input type="hidden" name="action" value="save_access">
     <input type="hidden" name="rel" value="<?= View::e($accessContent['rel']) ?>">
     <input type="hidden" name="redirect" value="<?= View::e($pathAccess) ?>">
