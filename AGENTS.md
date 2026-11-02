@@ -24,4 +24,4 @@ Roles come from `data/roles.json` (see `ROLES_PATH`). Soft-FK: unknown ids rejec
 
 ## Nav order
 
-Optional `_order.json` in a folder: JSON array of child folder names / page slugs. Absent → dirs then files, each A–Z by title. In the UI: **Ordonează** on a page (when you can edit) or Admin → **ordine** / `/admin?order=`.
+Optional `_order.json` in a folder: JSON array of child folder names / page slugs. Absent → dirs then files, each A–Z by title. In the UI: **Ordonează** on a page (when you can edit) or Admin → **ordine** / `/admin?order=`. **Redenumește** on a folder or page changes the directory name or `.md` filename. **Redenumește** on a folder or page changes the directory name or `.md` filename.

@@ -218,18 +218,38 @@ if (str_starts_with($path, 'admin')) {
     $libraryId = $active !== null ? $active->id : '';
 
     if ($method === 'POST') {
-        if (!Csrf::validate($config, $_POST['_csrf'] ?? null)) {
+        $action = (string) ($_POST['action'] ?? '');
+        $csrfOk = Csrf::validate($config, $_POST['_csrf'] ?? null);
+        if ($action === 'preview_md') {
+            header('Content-Type: application/json; charset=utf-8');
+            if (!$csrfOk) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Sesiune invalidă.'], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+            $parsed = Markdown::parse((string) ($_POST['body'] ?? ''));
+            echo json_encode(
+                ['html' => Markdown::toHtml($parsed['body'])],
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+            );
+            exit;
+        }
+        if (!$csrfOk) {
             $flashSet('error', 'Sesiune invalidă.');
             $redirect($libraryId === '' ? '/admin' : '/admin?lib=' . rawurlencode($libraryId));
         }
-        $action = (string) ($_POST['action'] ?? '');
         try {
+            $renamedTo = null;
             match ($action) {
                 'create_folder' => $admin->createFolder((string) ($_POST['parent'] ?? ''), (string) ($_POST['name'] ?? '')),
                 'create_page' => $admin->createPage(
                     (string) ($_POST['parent'] ?? ''),
                     (string) ($_POST['slug'] ?? ''),
                     (string) ($_POST['title'] ?? '')
+                ),
+                'rename' => $renamedTo = $admin->rename(
+                    (string) ($_POST['rel'] ?? ''),
+                    (string) ($_POST['name'] ?? '')
                 ),
                 'save_page' => $admin->savePage((string) ($_POST['rel'] ?? ''), (string) ($_POST['body'] ?? '')),
                 'save_access' => $admin->saveAccess((string) ($_POST['rel'] ?? ''), (string) ($_POST['json'] ?? '')),
@@ -242,7 +262,30 @@ if (str_starts_with($path, 'admin')) {
                 'upload' => $admin->uploadImage((string) ($_POST['parent'] ?? ''), $_FILES['file'] ?? []),
                 default => throw new RuntimeException('Unknown action'),
             };
-            $flashSet('ok', 'Salvat.');
+            $mode = (string) ($_POST['redirect_mode'] ?? '');
+            if (is_string($renamedTo) && ($mode === 'self' || $mode === 'edit')) {
+                $norm = str_replace('\\', '/', $renamedTo);
+                $isMd = str_ends_with(strtolower($norm), '.md');
+                $parent = dirname($norm);
+                if ($parent === '.' || $parent === '/') {
+                    $parent = '';
+                }
+                if ($mode === 'edit' && $isMd) {
+                    $q = ['path' => $parent, 'edit' => $norm];
+                } elseif ($mode === 'self' && !$isMd) {
+                    $q = ['path' => $norm];
+                } else {
+                    $q = null;
+                }
+                if ($q !== null) {
+                    if ($libraryId !== '') {
+                        $q = ['lib' => $libraryId] + $q;
+                    }
+                    $flashSet('ok', 'Redenumit.');
+                    $redirect('/admin?' . http_build_query($q));
+                }
+            }
+            $flashSet('ok', $action === 'rename' ? 'Redenumit.' : 'Salvat.');
         } catch (Throwable $e) {
             $flashSet('error', $e->getMessage());
         }

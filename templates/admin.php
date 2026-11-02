@@ -77,6 +77,21 @@ $pathAccess = $adminPathQ($browseRel, ['access' => '1']);
       <?php if ($browseParent !== null): ?>
         <a href="<?= View::e($prefix . $adminPathQ($browseParent)) ?>">↑ Sus</a>
       <?php endif; ?>
+      <?php if ($browseRel !== ''): ?>
+        <details class="rename-pop">
+          <summary>redenumește</summary>
+          <form method="post" action="<?= View::e($prefix) ?>/admin" class="rename-form">
+            <input type="hidden" name="_csrf" value="<?= View::e($csrf) ?>">
+            <?= $libInput ?>
+            <input type="hidden" name="action" value="rename">
+            <input type="hidden" name="rel" value="<?= View::e($browseRel) ?>">
+            <input type="hidden" name="redirect_mode" value="self">
+            <input type="hidden" name="redirect" value="<?= View::e($pathStay) ?>">
+            <input type="text" name="name" value="<?= View::e(basename($browseRel)) ?>" required aria-label="Nume folder" spellcheck="false">
+            <button type="submit" class="linkish">ok</button>
+          </form>
+        </details>
+      <?php endif; ?>
       <a href="<?= View::e($prefix . $pathOrder) ?>">Ordonează</a>
       <?php if ($isAdmin): ?>
         <a href="<?= View::e($prefix . $pathAccess) ?>">ACL</a>
@@ -106,20 +121,51 @@ $pathAccess = $adminPathQ($browseRel, ['access' => '1']);
             <span class="browse-title"><?= View::e($item['title']) ?></span>
             <code class="browse-name"><?= View::e($item['name']) ?></code>
           </a>
-          <span class="browse-row-actions">
+          <div class="browse-row-actions">
             <a href="<?= View::e($prefix . $adminPathQ($item['rel'], ['order' => '1'])) ?>">ordine</a>
             <?php if ($isAdmin): ?>
               <a href="<?= View::e($prefix . $adminPathQ($item['rel'], ['access' => '1'])) ?>">ACL</a>
             <?php endif; ?>
-          </span>
+            <details class="rename-pop">
+              <summary>redenumește</summary>
+              <form method="post" action="<?= View::e($prefix) ?>/admin" class="rename-form">
+                <input type="hidden" name="_csrf" value="<?= View::e($csrf) ?>">
+                <?= $libInput ?>
+                <input type="hidden" name="action" value="rename">
+                <input type="hidden" name="rel" value="<?= View::e($item['rel']) ?>">
+                <input type="hidden" name="redirect" value="<?= View::e($pathStay) ?>">
+                <input type="text" name="name" value="<?= View::e($item['name']) ?>" required aria-label="Nume folder" spellcheck="false">
+                <button type="submit" class="linkish">ok</button>
+              </form>
+            </details>
+          </div>
         <?php elseif ($item['type'] === 'md'): ?>
           <a class="browse-main" href="<?= View::e($prefix . $adminPathQ($browseRel, ['edit' => $item['rel']])) ?>">
             <span class="browse-icon" aria-hidden="true">md</span>
             <span class="browse-title"><?= View::e($item['title']) ?></span>
             <code class="browse-name"><?= View::e($item['name']) ?></code>
           </a>
-          <span class="browse-row-actions">
+          <div class="browse-row-actions">
             <a href="<?= View::e($prefix . $publicHref($item['rel'])) ?>">vezi</a>
+            <details class="rename-pop">
+              <summary>redenumește</summary>
+              <form method="post" action="<?= View::e($prefix) ?>/admin" class="rename-form">
+                <input type="hidden" name="_csrf" value="<?= View::e($csrf) ?>">
+                <?= $libInput ?>
+                <input type="hidden" name="action" value="rename">
+                <input type="hidden" name="rel" value="<?= View::e($item['rel']) ?>">
+                <input type="hidden" name="redirect" value="<?= View::e($pathStay) ?>">
+                <?php
+                  $pageStem = $item['name'];
+                  if (str_ends_with(strtolower($pageStem), '.md')) {
+                      $pageStem = substr($pageStem, 0, -3);
+                  }
+                ?>
+                <input type="text" name="name" value="<?= View::e($pageStem) ?>" required aria-label="Nume fișier" spellcheck="false">
+                <span class="muted">.md</span>
+                <button type="submit" class="linkish">ok</button>
+              </form>
+            </details>
             <form method="post" action="<?= View::e($prefix) ?>/admin" class="inline" onsubmit="return confirm('Ștergi?');">
               <input type="hidden" name="_csrf" value="<?= View::e($csrf) ?>">
               <?= $libInput ?>
@@ -128,13 +174,13 @@ $pathAccess = $adminPathQ($browseRel, ['access' => '1']);
               <input type="hidden" name="redirect" value="<?= View::e($pathStay) ?>">
               <button type="submit" class="linkish">șterge</button>
             </form>
-          </span>
+          </div>
         <?php else: ?>
           <a class="browse-main" href="<?= View::e($prefix . $publicHref($item['rel'])) ?>" target="_blank" rel="noopener">
             <span class="browse-icon" aria-hidden="true">img</span>
             <span class="browse-title"><?= View::e($item['title']) ?></span>
           </a>
-          <span class="browse-row-actions">
+          <div class="browse-row-actions">
             <form method="post" action="<?= View::e($prefix) ?>/admin" class="inline" onsubmit="return confirm('Ștergi?');">
               <input type="hidden" name="_csrf" value="<?= View::e($csrf) ?>">
               <?= $libInput ?>
@@ -143,7 +189,7 @@ $pathAccess = $adminPathQ($browseRel, ['access' => '1']);
               <input type="hidden" name="redirect" value="<?= View::e($pathStay) ?>">
               <button type="submit" class="linkish">șterge</button>
             </form>
-          </span>
+          </div>
         <?php endif; ?>
       </li>
     <?php endforeach; ?>
@@ -296,13 +342,70 @@ $pathAccess = $adminPathQ($browseRel, ['access' => '1']);
 <?php if ($editContent): ?>
 <section class="editor">
   <h2>Editează <?= View::e($editContent['rel']) ?></h2>
+  <?php
+    $editStem = basename($editContent['rel']);
+    if (str_ends_with(strtolower($editStem), '.md')) {
+        $editStem = substr($editStem, 0, -3);
+    }
+  ?>
+  <form method="post" action="<?= View::e($prefix) ?>/admin" class="rename-form">
+    <input type="hidden" name="_csrf" value="<?= View::e($csrf) ?>">
+    <?= $libInput ?>
+    <input type="hidden" name="action" value="rename">
+    <input type="hidden" name="rel" value="<?= View::e($editContent['rel']) ?>">
+    <input type="hidden" name="redirect_mode" value="edit">
+    <input type="hidden" name="redirect" value="<?= View::e($adminPathQ($browseRel, ['edit' => $editContent['rel']])) ?>">
+    <label>Nume fișier
+      <input type="text" name="name" value="<?= View::e($editStem) ?>" required spellcheck="false">
+      <span class="muted">.md</span>
+    </label>
+    <button type="submit">Redenumește</button>
+  </form>
   <form method="post" action="<?= View::e($prefix) ?>/admin" class="form">
     <input type="hidden" name="_csrf" value="<?= View::e($csrf) ?>">
     <?= $libInput ?>
     <input type="hidden" name="action" value="save_page">
     <input type="hidden" name="rel" value="<?= View::e($editContent['rel']) ?>">
     <input type="hidden" name="redirect" value="<?= View::e($adminPathQ($browseRel, ['edit' => $editContent['rel']])) ?>">
-    <textarea name="body" rows="28" class="code"><?= View::e($editContent['body']) ?></textarea>
+    <div class="md-editor is-split" data-md-editor
+         data-action="<?= View::e($prefix) ?>/admin"
+         data-csrf="<?= View::e($csrf) ?>"
+         <?php if ($libraryId !== ''): ?>data-lib="<?= View::e($libraryId) ?>"<?php endif; ?>
+         data-page="<?= View::e($prefix . $publicHref($editContent['rel'])) ?>">
+      <div class="md-toolbar" role="toolbar" aria-label="Markdown">
+        <button type="button" data-md="h2" title="Titlu de secțiune">H2</button>
+        <button type="button" data-md="h3" title="Subtitlu">H3</button>
+        <span class="md-toolbar-sep" aria-hidden="true"></span>
+        <button type="button" data-md="bold" title="Aldin (Ctrl+B)"><strong>B</strong></button>
+        <button type="button" data-md="italic" title="Cursiv (Ctrl+I)"><em>I</em></button>
+        <button type="button" data-md="code" title="Cod în linie"><code>&lt;/&gt;</code></button>
+        <span class="md-toolbar-sep" aria-hidden="true"></span>
+        <button type="button" data-md="link" title="Link (Ctrl+K)">link</button>
+        <button type="button" data-md="image" title="Imagine">imagine</button>
+        <span class="md-toolbar-sep" aria-hidden="true"></span>
+        <button type="button" data-md="ul" title="Listă">listă</button>
+        <button type="button" data-md="ol" title="Listă numerotată">1.</button>
+        <button type="button" data-md="quote" title="Citat">citat</button>
+        <button type="button" data-md="fence" title="Bloc de cod">bloc</button>
+        <button type="button" data-md="hr" title="Linie orizontală">—</button>
+        <span class="md-toolbar-gap"></span>
+        <button type="button" data-view="write" aria-pressed="false">Sursă</button>
+        <button type="button" data-view="split" aria-pressed="true">Împărțit</button>
+        <button type="button" data-view="preview" aria-pressed="false">Previzualizare</button>
+      </div>
+      <div class="md-panes">
+        <textarea name="body" class="md-source code" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"><?= View::e($editContent['body']) ?></textarea>
+        <div class="md-preview-wrap">
+          <div class="md-preview-label">Previzualizare</div>
+          <div class="md-preview prose"></div>
+        </div>
+      </div>
+      <div class="md-status">
+        <span data-md-pos>Ln 1, Col 1</span>
+        <span data-md-state></span>
+      </div>
+    </div>
+    <script src="<?= View::e($prefix) ?>/assets/md-editor.js"></script>
     <button type="submit">Salvează</button>
     <a href="<?= View::e($prefix . $publicHref($editContent['rel'])) ?>">Vezi pagina</a>
     <a href="<?= View::e($prefix . $pathStay) ?>">Închide</a>
