@@ -25,7 +25,7 @@ final class Search
      * Full-text search over Markdown under CONTENT_ROOT, filtered by ACL.
      *
      * @param list<string>|null $userRoles null = guest
-     * @return list<array{title: string, href: string, path: string, snippet: string, score: int, library: string}>
+     * @return list<array{title: string, href: string, path: string, snippet: string, snippetHtml: string, score: int, library: string}>
      */
     public function query(string $q, ?array $userRoles, int $limit = self::DEFAULT_LIMIT): array
     {
@@ -53,7 +53,7 @@ final class Search
 
     /**
      * @param list<string>|null $userRoles
-     * @param list<array{title: string, href: string, path: string, snippet: string, score: int, library: string}> $hits
+     * @param list<array{title: string, href: string, path: string, snippet: string, snippetHtml: string, score: int, library: string}> $hits
      */
     private function walk(string $absDir, string $relDir, ?array $userRoles, string $q, array &$hits): void
     {
@@ -87,7 +87,7 @@ final class Search
     }
 
     /**
-     * @return array{title: string, href: string, path: string, snippet: string, score: int, library: string}|null
+     * @return array{title: string, href: string, path: string, snippet: string, snippetHtml: string, score: int, library: string}|null
      */
     private function matchFile(string $absPath, string $relMd, string $q): ?array
     {
@@ -103,21 +103,20 @@ final class Search
         $plain = self::plainText($body);
 
         $score = 0;
-        $snippetSource = $plain;
         $matchIn = null;
+        $foldedQuery = Text::fold($q);
 
-        if ($title !== '' && mb_stripos($title, $q) !== false) {
+        if ($title !== '' && mb_strpos(Text::fold($title), $foldedQuery) !== false) {
             $score += 100;
             $matchIn = 'title';
         }
-        if (is_string($description) && $description !== '' && mb_stripos($description, $q) !== false) {
+        if (is_string($description) && $description !== '' && mb_strpos(Text::fold($description), $foldedQuery) !== false) {
             $score += 50;
             if ($matchIn === null) {
                 $matchIn = 'description';
-                $snippetSource = $description;
             }
         }
-        $bodyPos = mb_stripos($plain, $q);
+        $bodyPos = mb_strpos(Text::fold($plain), $foldedQuery);
         if ($bodyPos !== false) {
             $score += 10;
             if ($matchIn === null) {
@@ -144,6 +143,7 @@ final class Search
             'href' => $this->mountedHref($relMd),
             'path' => self::displayPath($relMd),
             'snippet' => $snippet,
+            'snippetHtml' => self::highlight($snippet, $q),
             'score' => $score,
             'library' => $this->libraryTitle,
         ];
@@ -203,14 +203,15 @@ final class Search
         if ($text === '') {
             return '';
         }
-        $pos = mb_stripos($text, $q);
+        $needle = Text::fold($q);
+        $pos = $needle === '' ? false : mb_strpos(Text::fold($text), $needle);
         if ($pos === false) {
             return mb_strlen($text) > $radius * 2
                 ? mb_substr($text, 0, $radius * 2) . '…'
                 : $text;
         }
         $start = max(0, $pos - $radius);
-        $len = mb_strlen($q) + $radius * 2;
+        $len = mb_strlen($needle) + $radius * 2;
         $snippet = mb_substr($text, $start, $len);
         if ($start > 0) {
             $snippet = '…' . $snippet;
@@ -219,5 +220,30 @@ final class Search
             $snippet .= '…';
         }
         return $snippet;
+    }
+
+    /** Escaped snippet with `<mark>` around folded matches of `$q`. */
+    public static function highlight(string $text, string $q): string
+    {
+        $needle = Text::fold($q);
+        $span = mb_strlen($needle);
+        if ($text === '' || $span < 1) {
+            return View::e($text);
+        }
+        $folded = Text::fold($text);
+        $html = '';
+        $offset = 0;
+        $length = mb_strlen($text);
+        while ($offset < $length) {
+            $pos = mb_strpos($folded, $needle, $offset);
+            if ($pos === false || $pos < $offset) {
+                $html .= View::e(mb_substr($text, $offset));
+                break;
+            }
+            $html .= View::e(mb_substr($text, $offset, $pos - $offset));
+            $html .= '<mark>' . View::e(mb_substr($text, $pos, $span)) . '</mark>';
+            $offset = $pos + $span;
+        }
+        return $html;
     }
 }

@@ -38,8 +38,8 @@ $prefix = ($base === '' || $base === '/') ? '' : $base;
           }
           echo View::e(implode(' · ', $bits));
         ?></div>
-        <?php if ($hit['snippet'] !== ''): ?>
-          <p class="search-hit-snippet"><?= View::e($hit['snippet']) ?></p>
+        <?php if (($hit['snippetHtml'] ?? '') !== ''): ?>
+          <p class="search-hit-snippet"><?= $hit['snippetHtml'] ?></p>
         <?php endif; ?>
       </li>
     <?php endforeach; ?>

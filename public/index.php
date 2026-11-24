@@ -383,8 +383,17 @@ if (str_starts_with($path, 'admin')) {
     $browseParent = $browseRel === '' ? null : (dirname($browseRel) === '.' ? '' : dirname($browseRel));
     $current = ($active !== null && $active->id !== '') ? $active : null;
 
+    $adminTitle = 'Admin conținut';
+    if ($editContent !== null) {
+        $adminTitle = 'Editează';
+    } elseif ($orderContent !== null) {
+        $adminTitle = 'Ordine';
+    } elseif ($accessContent !== null) {
+        $adminTitle = 'ACL';
+    }
+
     $view->render('admin', $shell([
-        'title' => 'Admin conținut',
+        'title' => $adminTitle,
         'chooseLibrary' => false,
         'browseRel' => $browseRel,
         'browseParent' => $browseParent,
@@ -515,7 +524,7 @@ if ($resolved['type'] === 'dir') {
     }
     $html .= '</ul>';
     $canEditHere = $auth->canEditContent() && Acl::canWrite($roles, $acl);
-    $view->render('doc', $shell([
+    $dirData = $shell([
         'title' => $title,
         'html' => $html,
         'pageTitle' => $title,
@@ -523,21 +532,28 @@ if ($resolved['type'] === 'dir') {
         'canEdit' => $canEditHere,
         'editRel' => null,
         'orderRel' => $canEditHere ? $resolved['rel'] : null,
-    ], $current));
+        'toc' => [],
+        'updatedAt' => null,
+        'description' => null,
+    ], $current);
+    $dirData['neighbors'] = pageNeighbors($dirData['nav'], publicHref($current?->mount() ?? '', $resolved));
+    $view->render('doc', $dirData);
     exit;
 }
 
 $parsed = Markdown::parseFile($resolved['path']);
 $pageTitle = $parsed['title'] ?? ContentTree::humanize(basename($resolved['path'], '.md'));
-$html = Markdown::toHtml($parsed['body']);
+$rendered = Markdown::render($parsed['body']);
+$html = $rendered['html'];
 $editRel = $resolved['rel'];
 $canEditHere = $auth->canEditContent() && Acl::canWrite($roles, $acl);
 $parentRel = dirname(str_replace('\\', '/', $editRel));
 if ($parentRel === '.' || $parentRel === '/') {
     $parentRel = '';
 }
+$mtime = filemtime($resolved['path']);
 
-$view->render('doc', $shell([
+$pageData = $shell([
     'title' => $pageTitle,
     'html' => $html,
     'pageTitle' => $pageTitle,
@@ -545,7 +561,12 @@ $view->render('doc', $shell([
     'canEdit' => $canEditHere,
     'editRel' => $editRel,
     'orderRel' => $canEditHere ? $parentRel : null,
-], $current));
+    'toc' => $rendered['toc'],
+    'updatedAt' => is_int($mtime) ? formatUpdated($mtime) : null,
+    'description' => $parsed['description'],
+], $current);
+$pageData['neighbors'] = pageNeighbors($pageData['nav'], publicHref($current?->mount() ?? '', $resolved));
+$view->render('doc', $pageData);
 exit;
 
 /**
@@ -595,7 +616,7 @@ function librarySwitcher(LibraryRegistry $registry, ?array $roles, ?Library $cur
 
 /**
  * @param list<string>|null $roles
- * @return list<array{title: string, href: string, path: string, snippet: string, score: int, library: string}>
+ * @return list<array{title: string, href: string, path: string, snippet: string, snippetHtml: string, score: int, library: string}>
  */
 function searchAll(LibraryRegistry $registry, ?array $roles, string $q): array
 {
@@ -648,6 +669,85 @@ function breadcrumbFromPath(ContentTree $tree, string $path, string $mount = '',
         $crumbs[] = ['title' => $tree->titleForRel($rel), 'href' => $acc];
     }
     return $crumbs;
+}
+
+/**
+ * Public URL for a resolved page, matching nav hrefs (folders keep the trailing slash).
+ *
+ * @param array{type: string, path: string, rel: string} $resolved
+ */
+function publicHref(string $mount, array $resolved): string
+{
+    if ($resolved['type'] === 'dir') {
+        $rel = trim($resolved['rel'], '/');
+        if ($rel === '') {
+            return $mount === '' ? '/' : $mount . '/';
+        }
+        return ($mount === '' ? '' : $mount) . '/' . $rel . '/';
+    }
+    $href = Search::hrefFromRelMd($resolved['rel']);
+    if ($mount === '') {
+        return $href;
+    }
+    return $href === '/' ? $mount . '/' : $mount . $href;
+}
+
+/**
+ * Previous and next readable pages in nav order.
+ *
+ * @param list<array{type?: string, title?: string, href?: string, children?: list}> $nav
+ * @return array{prev: ?array{title: string, href: string}, next: ?array{title: string, href: string}}
+ */
+function pageNeighbors(array $nav, string $href): array
+{
+    $flat = [];
+    $walk = static function (array $items) use (&$walk, &$flat): void {
+        foreach ($items as $item) {
+            $itemHref = (string) ($item['href'] ?? '');
+            if ($itemHref !== '') {
+                $flat[] = ['title' => (string) ($item['title'] ?? ''), 'href' => $itemHref];
+            }
+            if (!empty($item['children']) && is_array($item['children'])) {
+                $walk($item['children']);
+            }
+        }
+    };
+    $walk($nav);
+
+    $key = static function (string $h): string {
+        if ($h === '' || $h === '/') {
+            return '/';
+        }
+        $slash = str_ends_with($h, '/');
+        $h = '/' . trim($h, '/');
+        return $slash ? $h . '/' : $h;
+    };
+    $current = $key($href);
+    $idx = null;
+    foreach ($flat as $i => $item) {
+        if ($key($item['href']) === $current) {
+            $idx = $i;
+            break;
+        }
+    }
+    if ($idx === null) {
+        return ['prev' => null, 'next' => $flat[0] ?? null];
+    }
+    return [
+        'prev' => $idx > 0 ? $flat[$idx - 1] : null,
+        'next' => $flat[$idx + 1] ?? null,
+    ];
+}
+
+function formatUpdated(int $ts): string
+{
+    $months = [
+        1 => 'ianuarie', 2 => 'februarie', 3 => 'martie', 4 => 'aprilie',
+        5 => 'mai', 6 => 'iunie', 7 => 'iulie', 8 => 'august',
+        9 => 'septembrie', 10 => 'octombrie', 11 => 'noiembrie', 12 => 'decembrie',
+    ];
+    $month = $months[(int) date('n', $ts)] ?? '';
+    return (int) date('j', $ts) . ' ' . $month . ' ' . date('Y', $ts);
 }
 
 /**

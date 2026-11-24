@@ -24,7 +24,11 @@ if ($isMaxxOpsBrand) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title><?= View::e($title) ?> · <?= View::e($brandName) ?></title>
+  <?php if (!empty($description)): ?>
+    <meta name="description" content="<?= View::e($description) ?>">
+  <?php endif; ?>
   <link rel="stylesheet" href="<?= View::e($prefix) ?>/assets/style.css">
+  <script src="<?= View::e($prefix) ?>/assets/prose.js"></script>
   <link rel="icon" href="<?= View::e($prefix) ?>/favicon.svg" type="image/svg+xml">
   <style>
     #page-loader {

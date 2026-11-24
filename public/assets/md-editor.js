@@ -136,6 +136,15 @@
       ul: function () { list(false); },
       ol: function () { list(true); },
       quote: quote,
+      callout: function () {
+        var selected = source.value.slice(source.selectionStart, source.selectionEnd);
+        var body = selected || 'Textul notei.';
+        var quoted = body.split('\n').map(function (line) { return '> ' + line; }).join('\n');
+        var chunk = '> [!NOTE]\n' + quoted;
+        var start = source.selectionStart;
+        var selFrom = start + '> [!NOTE]\n> '.length;
+        replaceRange(start, source.selectionEnd, chunk, selFrom, selFrom + body.split('\n')[0].length);
+      },
       fence: fence,
       hr: function () {
         var start = source.selectionStart;
@@ -230,6 +239,7 @@
         if (mine !== seq) return;
         var html = (data && data.html) || '';
         preview.innerHTML = html.trim() === '' ? '<p class="muted">Nimic de afișat.</p>' : rebase(html);
+        if (window.WikiMaxxProse) window.WikiMaxxProse.decorate(preview);
         if (state) state.textContent = '';
       }).catch(function (err) {
         if (mine !== seq) return;

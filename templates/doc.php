@@ -38,6 +38,51 @@ $adminQ = static function (array $q) use ($libraryId): string {
   </p>
 <?php endif; ?>
 
-<article class="prose">
-  <?= $html ?>
-</article>
+<?php
+$toc = $toc ?? [];
+$updatedAt = $updatedAt ?? null;
+$neighbors = $neighbors ?? ['prev' => null, 'next' => null];
+$prev = $neighbors['prev'] ?? null;
+$next = $neighbors['next'] ?? null;
+?>
+<?php if ($updatedAt): ?>
+  <p class="doc-updated">Actualizat <?= View::e($updatedAt) ?></p>
+<?php endif; ?>
+
+<div class="doc-layout<?= $toc !== [] ? ' has-toc' : '' ?>">
+  <div class="doc-main">
+    <article class="prose">
+      <?= $html ?>
+    </article>
+    <?php if ($prev || $next): ?>
+      <nav class="pager" aria-label="Pagini">
+        <?php if ($prev): ?>
+          <a class="pager-prev" href="<?= View::e($prefix . $prev['href']) ?>">
+            <span class="pager-kicker">Anterior</span>
+            <span class="pager-title"><?= View::e($prev['title']) ?></span>
+          </a>
+        <?php else: ?>
+          <span></span>
+        <?php endif; ?>
+        <?php if ($next): ?>
+          <a class="pager-next" href="<?= View::e($prefix . $next['href']) ?>">
+            <span class="pager-kicker">Următor</span>
+            <span class="pager-title"><?= View::e($next['title']) ?></span>
+          </a>
+        <?php endif; ?>
+      </nav>
+    <?php endif; ?>
+  </div>
+  <?php if ($toc !== []): ?>
+    <nav class="toc" aria-label="Pe această pagină">
+      <p class="toc-title">Pe această pagină</p>
+      <ol>
+        <?php foreach ($toc as $heading): ?>
+          <li class="toc-l<?= (int) $heading['level'] ?>">
+            <a href="#<?= View::e($heading['id']) ?>"><?= View::e($heading['text']) ?></a>
+          </li>
+        <?php endforeach; ?>
+      </ol>
+    </nav>
+  <?php endif; ?>
+</div>

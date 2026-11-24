@@ -5,7 +5,8 @@
   "license": "MIT",
   "require": {
     "php": ">=8.2",
-    "erusev/parsedown": "^1.7"
+    "erusev/parsedown": "^1.7",
+    "scrivo/highlight.php": "^9.18"
   },
   "autoload": {
     "psr-4": {
